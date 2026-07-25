@@ -84,11 +84,26 @@ export default async function HomePage() {
         <div className="mb-6 space-y-2 sm:mb-8 sm:space-y-3">
           <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-400 sm:text-sm sm:tracking-[0.35em]">Image metadata</p>
           <h1 className="text-2xl font-semibold leading-tight text-white sm:text-3xl md:text-4xl">Drag and drop an image to inspect its EXIF data</h1>
-          <p className="max-w-2xl text-sm text-slate-300 sm:text-base">
-            Upload a photo to preview it and pull out the original capture date, latitude, and longitude from its EXIF metadata.  This Data is then matched to Phish show information from phish.net.  If No EXIF data is found, you can manually enter a date to see if there was a show on that day. When possible, phish.in data and audio links will be included for the show.  If a match is found, you can click the link to view the show on phish.net.
-          </p>
-          <p>Future implementations will include saving photo and metadata to a personal library.</p>
+          
+          {/* Accordion section for About details */}
+          <details className="group rounded-2xl border border-slate-800 bg-slate-950/60 transition-all">
+            <summary className="flex cursor-pointer items-center justify-between p-4 text-sm font-semibold text-slate-200 hover:text-cyan-400 sm:text-base">
+              <span>About this app</span>
+              <span className="text-xs text-slate-500 transition-transform group-open:rotate-180">
+                ▼
+              </span>
+            </summary>
+            <div className="space-y-3 border-t border-slate-800/60 p-4 pt-3 text-sm text-slate-300 sm:text-base">
+              <p className="max-w-2xl">
+                Upload a photo to preview it and pull out the original capture date, latitude, and longitude from its EXIF metadata. This Data is then matched to Phish show information from phish.net. If No EXIF data is found, you can manually enter a date to see if there was a show on that day. When possible, phish.in data and audio links will be included for the show. If a match is found, you can click the link to view the show on phish.net.
+              </p>
+              <p className="text-xs text-slate-400 sm:text-sm">
+                Future implementations will include saving photo and metadata to a personal library.
+              </p>
+            </div>
+          </details>
         </div>
+
         <ShowMatchPanel
           initialPhotoMetadata={initialPhotoMetadata}
           initialShowResult={showResult}
@@ -99,7 +114,7 @@ export default async function HomePage() {
             }
             : null}
         />
-        <p>&copy; 2026 Don Barto Jr.</p>
+        <p className="mt-8 text-xs text-slate-500">&copy; 2026 Don Barto Jr.</p>
       </div>
     </main>
   );
