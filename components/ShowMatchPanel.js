@@ -602,7 +602,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
         </div>
       ) : null}
 
-      <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-4 shadow-xl shadow-slate-950/30 sm:p-6">
+     
         <form
           className="mb-4 flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-3 sm:flex-row sm:items-end sm:p-4"
           onSubmit={(event) => {
@@ -966,7 +966,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
             ) : null}
           </div>
         ) : null}
-      </div>
+      
     </div>
   );
 }
