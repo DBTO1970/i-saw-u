@@ -114,6 +114,20 @@ function sourceConfidence(source) {
   }
 }
 
+// Dynamic styling maps for Traffic Light Colors (Green/Yellow/Red)
+function getColorClasses(color) {
+  switch (color) {
+    case 'green':
+      return 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300';
+    case 'yellow':
+      return 'border-amber-500/40 bg-amber-500/10 text-amber-300';
+    case 'red':
+      return 'border-rose-500/40 bg-rose-500/10 text-rose-300';
+    default:
+      return 'border-cyan-500/40 bg-cyan-500/10 text-cyan-300';
+  }
+}
+
 function parsePhotoDateTime(photoMetadata) {
   const date = typeof photoMetadata?.dateTimeOriginal === 'string' ? photoMetadata.dateTimeOriginal : null;
   const time = typeof photoMetadata?.timeTaken === 'string' && photoMetadata.timeTaken !== 'Not available' ? photoMetadata.timeTaken : null;
@@ -231,6 +245,8 @@ function inferTimeContext(photoMetadata, show, setlistEntries) {
     return {
       label: 'Outside ±24h of show date',
       confidence: 'low',
+      color: 'red',
+      songContext: null,
     };
   }
 
@@ -240,10 +256,22 @@ function inferTimeContext(photoMetadata, show, setlistEntries) {
     ? new Date(segments[segments.length - 1].end.getTime())
     : new Date(`${show.date}T23:30:00`);
 
+  const calculateConfidenceAndColor = (hasExactSongMatch) => {
+    if (hasExactSongMatch && durationCoverage >= 0.8) {
+      return { confidence: 'high', color: 'green' };
+    }
+    if (durationCoverage >= 0.5) {
+      return { confidence: 'medium', color: 'yellow' };
+    }
+    return { confidence: 'low', color: 'red' };
+  };
+
   if (photoDateTime < showStart) {
     return {
       label: 'Pre-show',
       confidence: 'medium',
+      color: 'yellow',
+      songContext: null,
     };
   }
 
@@ -251,29 +279,56 @@ function inferTimeContext(photoMetadata, show, setlistEntries) {
     return {
       label: 'Post-show',
       confidence: 'medium',
+      color: 'yellow',
+      songContext: null,
     };
   }
 
-  const songMatch = segments.find((segment) => segment.type === 'song' && photoDateTime >= segment.start && photoDateTime <= segment.end);
-  if (songMatch) {
+  const songSegments = segments.filter((segment) => segment.type === 'song');
+  const matchIndex = songSegments.findIndex(
+    (segment) => photoDateTime >= segment.start && photoDateTime <= segment.end
+  );
+
+  if (matchIndex !== -1) {
+    const currentSong = songSegments[matchIndex];
+    const songBefore = songSegments[matchIndex - 1] || null;
+    const songAfter = songSegments[matchIndex + 1] || null;
+
+    const { confidence, color } = calculateConfidenceAndColor(true);
+
     return {
-      label: `Estimated song: ${songMatch.label}`,
-      confidence: durationCoverage >= 0.6 ? 'medium' : 'low',
-      songLabel: songMatch.label,
+      label: `Estimated song: ${currentSong.label}`,
+      confidence,
+      color,
+      songLabel: currentSong.label,
+      songContext: {
+        previous: songBefore ? { label: songBefore.label, color: 'yellow' } : null,
+        current: { label: currentSong.label, color },
+        next: songAfter ? { label: songAfter.label, color: 'yellow' } : null,
+      },
     };
   }
 
-  const breakMatch = segments.find((segment) => segment.type === 'break' && photoDateTime >= segment.start && photoDateTime <= segment.end);
+  const breakMatch = segments.find(
+    (segment) => segment.type === 'break' && photoDateTime >= segment.start && photoDateTime <= segment.end
+  );
+
+  const { confidence, color } = calculateConfidenceAndColor(false);
+
   if (breakMatch) {
     return {
       label: breakMatch.label,
-      confidence: durationCoverage >= 0.6 ? 'medium' : 'low',
+      confidence,
+      color,
+      songContext: null,
     };
   }
 
   return {
     label: 'During show (song estimate unavailable)',
-    confidence: durationCoverage >= 0.6 ? 'medium' : 'low',
+    confidence,
+    color: 'red',
+    songContext: null,
   };
 }
 
@@ -310,7 +365,7 @@ function formatSetlist(setlist = []) {
   }).filter((entry) => entry.label);
 }
 
-function renderSetlist(entries) {
+function renderSetlist(entries, currentSongLabel) {
   if (!entries.length) {
     return <p className="text-sm text-slate-400">No setlist data available.</p>;
   }
@@ -347,15 +402,18 @@ function renderSetlist(entries) {
         <div key={`${section.title}-${sectionIndex}`} className="rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
           <p className="text-xs font-semibold uppercase tracking-[0.25em] text-cyan-400">{section.title}</p>
           <ul className="mt-2 space-y-2 text-sm text-slate-300">
-            {section.songs.map((item, index) => (
-              <li key={`${section.title}-${index}`} className="flex items-start gap-2">
-                <span className="mt-1 h-2 w-2 flex-none rounded-full bg-cyan-500" />
-                <span>
-                  <span>{item.label}</span>
-                  {item.notes ? <span className="block text-xs text-slate-500">{item.notes}</span> : null}
-                </span>
-              </li>
-            ))}
+            {section.songs.map((item, index) => {
+              const isMatched = currentSongLabel && item.label.toLowerCase() === currentSongLabel.toLowerCase();
+              return (
+                <li key={`${section.title}-${index}`} className={`flex items-start gap-2 rounded-lg p-1 transition-colors ${isMatched ? 'bg-cyan-500/10 border border-cyan-500/30' : ''}`}>
+                  <span className={`mt-1.5 h-2 w-2 flex-none rounded-full ${isMatched ? 'bg-cyan-300 animate-pulse' : 'bg-cyan-500'}`} />
+                  <span className="flex-1">
+                    <span className={isMatched ? 'font-semibold text-cyan-200' : ''}>{item.label}</span>
+                    {item.notes ? <span className="block text-xs text-slate-500">{item.notes}</span> : null}
+                  </span>
+                </li>
+              );
+            })}
           </ul>
         </div>
       ))}
@@ -405,7 +463,9 @@ export default function ShowMatchCard({ photoMetadata, show }) {
   const dateConfidence = sourceConfidence(dateSource);
   const timeConfidence = sourceConfidence(timeSource);
   const gpsConfidence = sourceConfidence(gpsSource);
+  
   const timeContext = useMemo(() => inferTimeContext(photoMetadata, show, setlistEntries), [photoMetadata, setlistEntries, show]);
+
   const [phishInLinks, setPhishInLinks] = useState({
     showUrl: null,
     songUrl: null,
@@ -470,11 +530,11 @@ export default function ShowMatchCard({ photoMetadata, show }) {
   }, [show?.date, timeContext?.songLabel]);
 
   return (
-    <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6 shadow-xl shadow-slate-950/30">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
+    <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-4 shadow-xl shadow-slate-950/30 sm:p-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
+        <div className="min-w-0">
           <p className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-400">Show match</p>
-          <h2 className="mt-2 text-2xl font-semibold text-white">{show?.venueName || 'Unknown venue'}</h2>
+          <h2 className="mt-2 text-xl font-semibold text-white sm:text-2xl">{show?.venueName || 'Unknown venue'}</h2>
           <p className="mt-1 text-sm text-slate-400">
             {show?.city || 'Unknown city'}, {show?.state || 'Unknown state'} • {formatDate(show?.date)}
           </p>
@@ -489,12 +549,39 @@ export default function ShowMatchCard({ photoMetadata, show }) {
               Location source: {sourceLabel(gpsSource)} ({gpsConfidence.label})
             </span>
             {timeContext ? (
-              <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${timeContext.confidence === 'medium' ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-300' : 'border-amber-500/40 bg-amber-500/10 text-amber-300'}`}>
-                {timeContext.label}
+              <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getColorClasses(timeContext.color)}`}>
+                {timeContext.label} ({timeContext.confidence} confidence)
               </span>
             ) : null}
           </div>
+
+          {/* Song Neighborhood View (Song Before -> Song Match -> Song After) */}
+          {timeContext?.songContext && (
+            <div className="mt-4 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-800 bg-slate-950/80 p-3">
+              {timeContext.songContext.previous && (
+                <span className={`inline-flex items-center rounded-lg border px-2.5 py-1 text-xs opacity-75 ${getColorClasses(timeContext.songContext.previous.color)}`}>
+                  ← Prev: {timeContext.songContext.previous.label}
+                </span>
+              )}
+              
+              <span className={`inline-flex items-center rounded-lg border px-3 py-1.5 text-xs font-semibold ${getColorClasses(timeContext.songContext.current.color)}`}>
+                Now: {timeContext.songContext.current.label}
+              </span>
+
+              {timeContext.songContext.next && (
+                <span className={`inline-flex items-center rounded-lg border px-2.5 py-1 text-xs opacity-75 ${getColorClasses(timeContext.songContext.next.color)}`}>
+                  Next: {timeContext.songContext.next.label} →
+                </span>
+              )}
+            </div>
+          )}
+
           <div className="mt-3 flex flex-col gap-1 text-xs text-cyan-300">
+            {show?.phishNetUrl ? (
+              <a href={show.phishNetUrl} target="_blank" rel="noreferrer" className="underline hover:text-cyan-200">
+                Open this show on phish.net
+              </a>
+            ) : null}
             {phishInLinks.loading ? <span className="text-slate-400">Loading Phish.in links...</span> : null}
             {!phishInLinks.loading && !phishInLinks.error && !phishInLinks.showUrl ? (
               <span className="text-amber-300">No phish.in show page was found for this date.</span>
@@ -517,7 +604,7 @@ export default function ShowMatchCard({ photoMetadata, show }) {
           </div>
         </div>
         {locationVerified ? (
-          <span className="inline-flex items-center rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-sm font-medium text-emerald-300">
+          <span className="inline-flex items-center self-start rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-sm font-medium text-emerald-300">
             Location Verified
           </span>
         ) : null}
@@ -527,34 +614,34 @@ export default function ShowMatchCard({ photoMetadata, show }) {
         <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
           <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Photo metadata</p>
           <dl className="mt-3 space-y-2 text-sm text-slate-300">
-            <div className="flex justify-between gap-4">
+            <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
               <dt className="text-slate-500">Date</dt>
-              <dd>{photoMetadata?.dateTimeOriginalDisplay || photoMetadata?.dateTimeOriginal || 'Unknown'}</dd>
+              <dd className="sm:text-right">{photoMetadata?.dateTimeOriginalDisplay || photoMetadata?.dateTimeOriginal || 'Unknown'}</dd>
             </div>
             {photoMetadata?.timeTaken ? (
-              <div className="flex justify-between gap-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
                 <dt className="text-slate-500">Time</dt>
-                <dd>{photoMetadata.timeTaken}</dd>
+                <dd className="sm:text-right">{photoMetadata.timeTaken}</dd>
               </div>
             ) : null}
-            <div className="flex justify-between gap-4">
+            <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
               <dt className="text-slate-500">Latitude</dt>
-              <dd>{photoMetadata?.gpsLatitude || 'Unknown'}</dd>
+              <dd className="break-all sm:text-right">{photoMetadata?.gpsLatitude || 'Unknown'}</dd>
             </div>
-            <div className="flex justify-between gap-4">
+            <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
               <dt className="text-slate-500">Longitude</dt>
-              <dd>{photoMetadata?.gpsLongitude || 'Unknown'}</dd>
+              <dd className="break-all sm:text-right">{photoMetadata?.gpsLongitude || 'Unknown'}</dd>
             </div>
             {photoMetadata?.locationSource ? (
-              <div className="flex justify-between gap-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
                 <dt className="text-slate-500">Location source</dt>
-                <dd>{photoMetadata.locationSource}</dd>
+                <dd className="sm:text-right">{photoMetadata.locationSource}</dd>
               </div>
             ) : null}
             {Array.isArray(photoMetadata?.userTags) && photoMetadata.userTags.length > 0 ? (
-              <div className="flex justify-between gap-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
                 <dt className="text-slate-500">Tags</dt>
-                <dd className="text-right">{photoMetadata.userTags.join(', ')}</dd>
+                <dd className="break-words sm:text-right">{photoMetadata.userTags.join(', ')}</dd>
               </div>
             ) : null}
           </dl>
@@ -563,17 +650,17 @@ export default function ShowMatchCard({ photoMetadata, show }) {
         <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
           <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Show details</p>
           <dl className="mt-3 space-y-2 text-sm text-slate-300">
-            <div className="flex justify-between gap-4">
+            <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
               <dt className="text-slate-500">Venue</dt>
-              <dd>{show?.venueName || 'Unknown'}</dd>
+              <dd className="sm:text-right">{show?.venueName || 'Unknown'}</dd>
             </div>
-            <div className="flex justify-between gap-4">
+            <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
               <dt className="text-slate-500">Location</dt>
-              <dd>{[show?.city, show?.state].filter(Boolean).join(', ') || 'Unknown'}</dd>
+              <dd className="sm:text-right">{[show?.city, show?.state].filter(Boolean).join(', ') || 'Unknown'}</dd>
             </div>
-            <div className="flex justify-between gap-4">
+            <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
               <dt className="text-slate-500">Date</dt>
-              <dd>{formatDate(show?.date)}</dd>
+              <dd className="sm:text-right">{formatDate(show?.date)}</dd>
             </div>
           </dl>
         </div>
@@ -581,7 +668,7 @@ export default function ShowMatchCard({ photoMetadata, show }) {
 
       <div className="mt-6">
         <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Setlist</p>
-        <div className="mt-3">{renderSetlist(setlistEntries)}</div>
+        <div className="mt-3">{renderSetlist(setlistEntries, timeContext?.songLabel)}</div>
         {show?.setlistNotes ? (
           <p className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/70 p-3 text-sm text-slate-300">
             {show.setlistNotes}

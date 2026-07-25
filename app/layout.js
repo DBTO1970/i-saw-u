@@ -1,8 +1,8 @@
 import './globals.css';
 
 export const metadata = {
-  title: 'Image EXIF Uploader',
-  description: 'Upload an image and inspect its EXIF metadata.',
+  title: 'I Saw U',
+  description: 'Upload an image and inspect its EXIF metadata to compare it to the phish.net api.',
   manifest: '/manifest.json',
   icons: {
     icon: [

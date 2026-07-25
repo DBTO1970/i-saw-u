@@ -159,6 +159,32 @@ function extractCoordinate(value) {
   return null;
 }
 
+function buildPhishNetShowUrl(showRecord, fallbackDate) {
+  const directUrl = normalizeText(
+    showRecord?.url
+    || showRecord?.showurl
+    || showRecord?.setlist_url
+    || showRecord?.setlistUrl
+    || showRecord?.permalink,
+  );
+
+  if (directUrl) {
+    if (directUrl.startsWith('http://') || directUrl.startsWith('https://')) {
+      return directUrl;
+    }
+    if (directUrl.startsWith('/')) {
+      return `https://phish.net${directUrl}`;
+    }
+  }
+
+  const dateForLookup = normalizeText(showRecord?.showdate || fallbackDate);
+  if (!dateForLookup) {
+    return null;
+  }
+
+  return `https://phish.net/setlists/?d=${encodeURIComponent(dateForLookup)}`;
+}
+
 function getDataRows(payload) {
   if (!payload || typeof payload !== 'object') {
     return [];
@@ -347,6 +373,7 @@ function buildShowFromRecord(showRecord, fallbackDate, parsedSetlist = [], coord
     venueName: normalizeText(showRecord.venue || showRecord.venue_name || showRecord.venueName),
     city: normalizeText(showRecord.city || showRecord.cityName || showRecord.city_name),
     state: normalizeText(showRecord.state || showRecord.stateName || showRecord.state_name),
+    phishNetUrl: buildPhishNetShowUrl(showRecord, fallbackDate),
     latitude: rawLatitude ?? coordinates.latitude ?? null,
     longitude: rawLongitude ?? coordinates.longitude ?? null,
     setlistNotes: normalizeText(showRecord.setlist_notes || showRecord.setlistnotes),

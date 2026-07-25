@@ -3,7 +3,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getShowByDate, searchLocationAutocomplete, searchShowsByLocation } from '../app/actions/shows';
 import ImageExifUploader from './ImageExifUploader';
-import PhotoPicker from './PhotoPicker';
 import ShowMatchCard from './ShowMatchCard';
 
 function extractDateFromMetadata(metadata) {
@@ -122,6 +121,36 @@ function formatVenueSearchGap(days) {
 
 const SHARED_IMPORT_HISTORY_KEY = 'sharedImportHistoryV1';
 
+function createEmptyPhotoMetadata() {
+  return {
+    dateTimeOriginal: 'Not available',
+    dateTimeOriginalDisplay: 'Not available',
+    timeTaken: 'Not available',
+    gpsLatitude: 'Not available',
+    gpsLongitude: 'Not available',
+    dateSource: 'none',
+    timeSource: 'none',
+    gpsSource: 'none',
+    rawDateTimeOriginal: null,
+    rawGpsLatitude: null,
+    rawGpsLongitude: null,
+    rawGpsLatitudeRef: null,
+    rawGpsLongitudeRef: null,
+    sidecarFileName: '',
+    sidecarUsed: false,
+    userTags: [],
+  };
+}
+
+function createEmptyShowResult() {
+  return {
+    show: null,
+    error: null,
+    nearbyShows: [],
+    relatedDateShows: [],
+  };
+}
+
 function formatSharedImportTimestamp(value) {
   if (!value) {
     return 'Unknown time';
@@ -161,9 +190,10 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
   const [autocompleteSuggestions, setAutocompleteSuggestions] = useState({ venues: [], cities: [], states: [] });
   const [isLoadingAutocomplete, setIsLoadingAutocomplete] = useState(false);
   const [sharedImportHistory, setSharedImportHistory] = useState([]);
-  const [rawPickerSummary, setRawPickerSummary] = useState('');
+  const [uploaderSessionKey, setUploaderSessionKey] = useState(0);
   const supplementalSectionRef = useRef(null);
   const supplementalVenueInputRef = useRef(null);
+  const suppressMissingDateMessageRef = useRef(false);
 
   const embeddedLat = parseCoordinateNumber(photoMetadata?.rawGpsLatitude);
   const embeddedLon = parseCoordinateNumber(photoMetadata?.rawGpsLongitude);
@@ -420,6 +450,11 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
   useEffect(() => {
     const dateFromMetadata = extractDateFromMetadata(photoMetadata);
     if (!dateFromMetadata) {
+      if (suppressMissingDateMessageRef.current) {
+        suppressMissingDateMessageRef.current = false;
+        setStatusMessage('Cleared current photo. Pick or upload a new image to start over.');
+        return;
+      }
       setStatusMessage('No embedded capture date was found in this file. Use Search by date, or load a sidecar file under Advanced if your cloud export separated metadata.');
       return;
     }
@@ -512,43 +547,40 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
 
   const photoDerivedDate = useMemo(() => extractDateFromMetadata(effectivePhotoMetadata), [effectivePhotoMetadata]);
 
+  const clearCurrentPhotoAndStartOver = () => {
+    suppressMissingDateMessageRef.current = true;
+    setUploaderSessionKey((current) => current + 1);
+    setPhotoMetadata(createEmptyPhotoMetadata());
+    setShowResult(createEmptyShowResult());
+    setShowLookupDate('');
+    setActiveDate('');
+    setShowSupplementalForm(false);
+    setVenueConfirmedFromShow(false);
+    setOverrideVenueName('');
+    setOverrideCity('');
+    setOverrideState('');
+    setOverrideLatitude('');
+    setOverrideLongitude('');
+    setOverrideDate('');
+    setOverrideTime('');
+    setOverrideTags('');
+    setLocationSearchResults([]);
+    setLocationSearchMessage('');
+    setAutocompleteSuggestions({ venues: [], cities: [], states: [] });
+  };
+
   return (
-    <div className="space-y-6">
-      <PhotoPicker
-        onPhotoPicked={({ metadata, file, hasDate, hasGps }) => {
-          setPhotoMetadata((current) => ({
-            ...current,
-            dateTimeOriginal: metadata.dateTimeOriginal || 'Not available',
-            dateTimeOriginalDisplay: metadata.dateTimeOriginalDisplay || metadata.dateTimeOriginal || 'Not available',
-            timeTaken: metadata.timeTaken || 'Not available',
-            gpsLatitude: metadata.gpsLatitude != null ? String(metadata.gpsLatitude) : 'Not available',
-            gpsLongitude: metadata.gpsLongitude != null ? String(metadata.gpsLongitude) : 'Not available',
-            dateSource: metadata.dateTimeOriginal ? 'exif' : 'none',
-            timeSource: metadata.timeTaken ? 'exif' : 'none',
-            gpsSource: metadata.gpsLatitude != null && metadata.gpsLongitude != null ? 'exif' : 'none',
-            rawDateTimeOriginal: metadata.rawDateTimeOriginal,
-            rawGpsLatitude: metadata.gpsLatitude,
-            rawGpsLongitude: metadata.gpsLongitude,
-            rawGpsLatitudeRef: metadata.gpsLatitudeRef,
-            rawGpsLongitudeRef: metadata.gpsLongitudeRef,
-            sidecarFileName: '',
-            sidecarUsed: false,
-          }));
-          if (hasDate || hasGps) {
-            setStatusMessage(`Loaded ${file.name} from raw file handle. EXIF date: ${hasDate ? 'found' : 'missing'}; GPS: ${hasGps ? 'found' : 'missing'}.`);
-          } else {
-            setStatusMessage(`Loaded ${file.name}, but no EXIF date/GPS was detected in the raw metadata.`);
-            setShowSupplementalForm(true);
-          }
-          setRawPickerSummary(`Last raw picker file: ${file.name} • Date: ${hasDate ? 'found' : 'missing'} • GPS: ${hasGps ? 'found' : 'missing'}`);
-        }}
-      />
-      {rawPickerSummary ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3 text-xs text-slate-300">
-          {rawPickerSummary}
-        </div>
-      ) : null}
-      <ImageExifUploader onMetadataChange={setPhotoMetadata} />
+    <div className="space-y-4 sm:space-y-6">
+      <div className="flex flex-wrap justify-stretch sm:justify-end">
+      <button
+        type="button"
+        onClick={clearCurrentPhotoAndStartOver}
+        className="w-full rounded-lg border border-rose-500/60 px-3 py-2.5 text-xs font-medium text-rose-200 transition hover:border-rose-400 hover:bg-rose-500/10 sm:w-auto"
+      >
+        Clear current photo and start over
+      </button>
+      </div>
+      <ImageExifUploader key={`image-uploader-${uploaderSessionKey}`} onMetadataChange={setPhotoMetadata} />
 
       {initialSharedPhoto ? (
         <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100">
@@ -570,9 +602,9 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
         </div>
       ) : null}
 
-      <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6 shadow-xl shadow-slate-950/30">
+      <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-4 shadow-xl shadow-slate-950/30 sm:p-6">
         <form
-          className="mb-4 flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-4 sm:flex-row sm:items-end"
+          className="mb-4 flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-3 sm:flex-row sm:items-end sm:p-4"
           onSubmit={(event) => {
             event.preventDefault();
             if (!showLookupDate) {
@@ -587,26 +619,35 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
             <input
               type="date"
               value={showLookupDate}
-              onChange={(event) => setShowLookupDate(event.target.value)}
+              onChange={(event) => {
+                const selectedDate = event.target.value;
+                setShowLookupDate(selectedDate);
+                if (!selectedDate) {
+                  setStatusMessage('Please select a date before searching.');
+                  return;
+                }
+                setActiveDate(selectedDate);
+                setStatusMessage(`Looking up show for ${selectedDate}...`);
+              }}
               className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none ring-cyan-500/50 focus:ring"
             />
           </label>
           <button
             type="submit"
-            className="rounded-xl bg-cyan-500 px-4 py-2 text-sm font-medium text-slate-950 transition hover:bg-cyan-400"
+            className="w-full rounded-xl bg-cyan-500 px-4 py-2.5 text-sm font-medium text-slate-950 transition hover:bg-cyan-400 sm:w-auto"
           >
             Find show
           </button>
         </form>
 
         {photoDerivedDate ? (
-          <div className="mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2 text-xs text-slate-300">
+          <div className="mb-4 flex flex-col items-start gap-2 rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2 text-xs text-slate-300 sm:flex-row sm:flex-wrap sm:items-center">
             <span>
               Photo date detected: <strong className="text-white">{photoDerivedDate}</strong>
             </span>
             <button
               type="button"
-              className="rounded-md border border-slate-600 px-2 py-1 text-xs font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-900"
+              className="w-full rounded-md border border-slate-600 px-2 py-1.5 text-xs font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-900 sm:w-auto"
               onClick={() => {
                 setShowLookupDate(photoDerivedDate);
                 setActiveDate(photoDerivedDate);
@@ -626,18 +667,18 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
             <p className="mt-1 text-xs text-slate-300">
               Based on the photo date ({extractDateFromMetadata(photoMetadata) || 'unknown'}), was this taken at <strong>{suggestedShow.venueName || 'this venue'}</strong> in {suggestedShow.city || 'unknown city'}, {suggestedShow.state || 'unknown state'}?
             </p>
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
               <button
                 type="button"
                 disabled={isSearchingLocation}
-                className="rounded-lg border border-cyan-500/60 px-3 py-2 text-xs font-medium text-cyan-200 transition hover:border-cyan-400 hover:bg-cyan-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full rounded-lg border border-cyan-500/60 px-3 py-2.5 text-xs font-medium text-cyan-200 transition hover:border-cyan-400 hover:bg-cyan-500/10 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                 onClick={lookupFromSuggestedVenue}
               >
                 {isSearchingLocation ? 'Searching venue/city/state...' : 'Lookup by venue/city/state'}
               </button>
               <button
                 type="button"
-                className="rounded-lg bg-cyan-500 px-3 py-2 text-xs font-medium text-slate-950 transition hover:bg-cyan-400"
+                className="w-full rounded-lg bg-cyan-500 px-3 py-2.5 text-xs font-medium text-slate-950 transition hover:bg-cyan-400 sm:w-auto"
                 onClick={() => {
                   setVenueConfirmedFromShow(true);
                   setShowSupplementalForm(true);
@@ -657,7 +698,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
               </button>
               <button
                 type="button"
-                className="rounded-lg border border-slate-600 px-3 py-2 text-xs font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-900"
+                className="w-full rounded-lg border border-slate-600 px-3 py-2.5 text-xs font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-900 sm:w-auto"
                 onClick={openManualVenueSearch}
               >
                 Search different venue / edit metadata
@@ -723,18 +764,18 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
                 <input value={overrideTags} onChange={(e) => setOverrideTags(e.target.value)} placeholder="friends, lawn, opener set" className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
               </label>
             </div>
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
               <button
                 type="button"
                 disabled={isSearchingLocation}
-                className="rounded-lg border border-cyan-500/60 px-3 py-2 text-xs font-medium text-cyan-200 transition hover:border-cyan-400 hover:bg-cyan-500/10 disabled:cursor-not-allowed disabled:opacity-60"
+                className="w-full rounded-lg border border-cyan-500/60 px-3 py-2.5 text-xs font-medium text-cyan-200 transition hover:border-cyan-400 hover:bg-cyan-500/10 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
                 onClick={() => runVenueLocationLookup()}
               >
                 {isSearchingLocation ? 'Searching venue/city/state...' : 'Lookup by venue/city/state'}
               </button>
               <button
                 type="button"
-                className="rounded-lg bg-cyan-500 px-3 py-2 text-xs font-medium text-slate-950 transition hover:bg-cyan-400"
+                className="w-full rounded-lg bg-cyan-500 px-3 py-2.5 text-xs font-medium text-slate-950 transition hover:bg-cyan-400 sm:w-auto"
                 onClick={() => {
                   if (overrideDate) {
                     setShowLookupDate(overrideDate);
@@ -747,7 +788,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
               </button>
               <button
                 type="button"
-                className="rounded-lg border border-slate-600 px-3 py-2 text-xs font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-900"
+                className="w-full rounded-lg border border-slate-600 px-3 py-2.5 text-xs font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-900 sm:w-auto"
                 onClick={() => {
                   setVenueConfirmedFromShow(false);
                   setOverrideVenueName('');
