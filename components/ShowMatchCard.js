@@ -1,0 +1,593 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import { getPhishInShowLinks } from '../app/actions/shows';
+
+function toRadians(value) {
+  return (value * Math.PI) / 180;
+}
+
+function haversineMiles(lat1, lon1, lat2, lon2) {
+  const earthRadiusMiles = 3958.8;
+  const dLat = toRadians(lat2 - lat1);
+  const dLon = toRadians(lon2 - lon1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toRadians(lat1)) * Math.cos(toRadians(lat2)) * Math.sin(dLon / 2) ** 2;
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return earthRadiusMiles * c;
+}
+
+function parseCoordinate(value) {
+  if (typeof value === 'number') {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const numeric = Number(value);
+    if (!Number.isNaN(numeric)) {
+      return numeric;
+    }
+  }
+
+  if (Array.isArray(value)) {
+    const [degrees, minutes, seconds] = value;
+    const degreeValue = parseCoordinate(degrees);
+    const minuteValue = parseCoordinate(minutes);
+    const secondValue = parseCoordinate(seconds);
+
+    if (degreeValue === null || minuteValue === null || secondValue === null) {
+      return null;
+    }
+
+    return degreeValue + minuteValue / 60 + secondValue / 3600;
+  }
+
+  if (value && typeof value === 'object') {
+    if (typeof value.numerator === 'number' && typeof value.denominator === 'number') {
+      return value.numerator / value.denominator;
+    }
+
+    if (value.value) {
+      return parseCoordinate(value.value);
+    }
+  }
+
+  return null;
+}
+
+function formatDate(value) {
+  if (!value) {
+    return 'Unknown';
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return value;
+  }
+
+  return parsed.toLocaleDateString(undefined, {
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+  });
+}
+
+function sourceLabel(source) {
+  switch (source) {
+    case 'exif':
+      return 'EXIF';
+    case 'xmp':
+      return 'XMP';
+    case 'iptc':
+      return 'IPTC';
+    case 'embedded':
+      return 'Embedded';
+    case 'sidecar':
+      return 'Sidecar';
+    case 'manual':
+      return 'Manual';
+    case 'show-confirmed':
+      return 'Show Confirmed';
+    case 'file-last-modified':
+      return 'File Timestamp';
+    default:
+      return 'Unknown';
+  }
+}
+
+function sourceConfidence(source) {
+  switch (source) {
+    case 'exif':
+    case 'xmp':
+    case 'iptc':
+    case 'embedded':
+      return { label: 'High', classes: 'border-emerald-500/40 bg-emerald-500/10 text-emerald-300' };
+    case 'manual':
+    case 'show-confirmed':
+    case 'sidecar':
+      return { label: 'Medium', classes: 'border-amber-500/40 bg-amber-500/10 text-amber-300' };
+    case 'file-last-modified':
+      return { label: 'Low', classes: 'border-rose-500/40 bg-rose-500/10 text-rose-300' };
+    default:
+      return { label: 'Unknown', classes: 'border-slate-600 bg-slate-800/40 text-slate-300' };
+  }
+}
+
+function parsePhotoDateTime(photoMetadata) {
+  const date = typeof photoMetadata?.dateTimeOriginal === 'string' ? photoMetadata.dateTimeOriginal : null;
+  const time = typeof photoMetadata?.timeTaken === 'string' && photoMetadata.timeTaken !== 'Not available' ? photoMetadata.timeTaken : null;
+  if (date && date !== 'Not available') {
+    const combined = `${date}T${time || '12:00:00'}`;
+    const parsedFromFields = new Date(combined);
+    if (!Number.isNaN(parsedFromFields.getTime())) {
+      return parsedFromFields;
+    }
+  }
+
+  const raw = photoMetadata?.rawDateTimeOriginal;
+  if (raw) {
+    let rawValue = String(raw).replace(' ', 'T');
+    if (time && !/T\d{2}:\d{2}/.test(rawValue)) {
+      rawValue = `${rawValue.split('T')[0]}T${time}`;
+    }
+    const parsedRaw = new Date(rawValue);
+    if (!Number.isNaN(parsedRaw.getTime())) {
+      return parsedRaw;
+    }
+  }
+
+  return null;
+}
+
+function parseShowDate(show) {
+  if (!show?.date) {
+    return null;
+  }
+
+  const parsed = new Date(`${show.date}T00:00:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function inferBreakDurationMs(previousSetTitle, nextSetTitle) {
+  if (!previousSetTitle || !nextSetTitle) {
+    return 0;
+  }
+
+  if (nextSetTitle.toLowerCase().includes('encore')) {
+    return 10 * 60 * 1000;
+  }
+
+  return 35 * 60 * 1000;
+}
+
+function buildSongTimeline(entries, showStart) {
+  const normalizedEntries = entries.filter((entry) => entry.type && entry.label);
+  if (!normalizedEntries.length) {
+    return { segments: [], durationCoverage: 0 };
+  }
+
+  const songEntries = normalizedEntries.filter((entry) => entry.type !== 'set' && entry.type !== 'encore' && entry.type !== 'encores');
+  if (!songEntries.length) {
+    return { segments: [], durationCoverage: 0 };
+  }
+
+  const songsWithDuration = songEntries.filter((entry) => typeof entry.durationSeconds === 'number' && entry.durationSeconds > 0).length;
+  const durationCoverage = songsWithDuration / songEntries.length;
+  const fallbackDurationMs = 8 * 60 * 1000;
+  const betweenSongsMs = 20 * 1000;
+  const segments = [];
+  let cursor = new Date(showStart.getTime());
+  let currentSetTitle = null;
+
+  normalizedEntries.forEach((entry) => {
+    const isSetHeader = entry.type === 'set' || entry.type === 'encore' || entry.type === 'encores';
+    if (isSetHeader) {
+      if (currentSetTitle) {
+        const breakDurationMs = inferBreakDurationMs(currentSetTitle, entry.label);
+        if (breakDurationMs > 0) {
+          const start = new Date(cursor.getTime());
+          const end = new Date(cursor.getTime() + breakDurationMs);
+          segments.push({
+            type: 'break',
+            label: `Break before ${entry.label}`,
+            start,
+            end,
+          });
+          cursor = end;
+        }
+      }
+      currentSetTitle = entry.label;
+      return;
+    }
+
+    const durationMs = typeof entry.durationSeconds === 'number' && entry.durationSeconds > 0
+      ? entry.durationSeconds * 1000
+      : fallbackDurationMs;
+    const start = new Date(cursor.getTime());
+    const end = new Date(cursor.getTime() + durationMs);
+    segments.push({
+      ...entry,
+      type: 'song',
+      setTitle: currentSetTitle,
+      start,
+      end,
+    });
+    cursor = new Date(end.getTime() + betweenSongsMs);
+  });
+
+  return { segments, durationCoverage };
+}
+
+function inferTimeContext(photoMetadata, show, setlistEntries) {
+  const photoDateTime = parsePhotoDateTime(photoMetadata);
+  const showDate = parseShowDate(show);
+  if (!photoDateTime || !showDate) {
+    return null;
+  }
+
+  const diffHours = (photoDateTime.getTime() - showDate.getTime()) / (1000 * 60 * 60);
+  if (Math.abs(diffHours) > 24) {
+    return {
+      label: 'Outside ±24h of show date',
+      confidence: 'low',
+    };
+  }
+
+  const showStart = new Date(`${show.date}T19:30:00`);
+  const { segments, durationCoverage } = buildSongTimeline(setlistEntries, showStart);
+  const showEnd = segments.length > 0
+    ? new Date(segments[segments.length - 1].end.getTime())
+    : new Date(`${show.date}T23:30:00`);
+
+  if (photoDateTime < showStart) {
+    return {
+      label: 'Pre-show',
+      confidence: 'medium',
+    };
+  }
+
+  if (photoDateTime > showEnd) {
+    return {
+      label: 'Post-show',
+      confidence: 'medium',
+    };
+  }
+
+  const songMatch = segments.find((segment) => segment.type === 'song' && photoDateTime >= segment.start && photoDateTime <= segment.end);
+  if (songMatch) {
+    return {
+      label: `Estimated song: ${songMatch.label}`,
+      confidence: durationCoverage >= 0.6 ? 'medium' : 'low',
+      songLabel: songMatch.label,
+    };
+  }
+
+  const breakMatch = segments.find((segment) => segment.type === 'break' && photoDateTime >= segment.start && photoDateTime <= segment.end);
+  if (breakMatch) {
+    return {
+      label: breakMatch.label,
+      confidence: durationCoverage >= 0.6 ? 'medium' : 'low',
+    };
+  }
+
+  return {
+    label: 'During show (song estimate unavailable)',
+    confidence: durationCoverage >= 0.6 ? 'medium' : 'low',
+  };
+}
+
+function formatSetlist(setlist = []) {
+  if (!Array.isArray(setlist) || setlist.length === 0) {
+    return [];
+  }
+
+  return setlist.map((entry) => {
+    if (typeof entry === 'string') {
+      return {
+        label: entry,
+        type: 'song',
+      };
+    }
+
+    if (entry && typeof entry === 'object') {
+      const rawLabel = entry.label || entry.title || entry.name || entry.song || entry.text || '';
+      const type = entry.type || entry.section || entry.kind || 'song';
+      const notes = entry.notes || entry.note || entry.footnote || '';
+      return {
+        label: rawLabel,
+        type: String(type).toLowerCase(),
+        notes: typeof notes === 'string' ? notes.trim() : '',
+        durationSeconds: entry.durationSeconds,
+      };
+    }
+
+    return {
+      label: '',
+      type: 'song',
+      notes: '',
+    };
+  }).filter((entry) => entry.label);
+}
+
+function renderSetlist(entries) {
+  if (!entries.length) {
+    return <p className="text-sm text-slate-400">No setlist data available.</p>;
+  }
+
+  const sections = [];
+  let activeSection = null;
+
+  entries.forEach((entry) => {
+    const isSectionHeader = entry.type === 'set' || entry.type === 'encore' || entry.type === 'encores';
+
+    if (isSectionHeader) {
+      activeSection = {
+        title: entry.label,
+        songs: [],
+      };
+      sections.push(activeSection);
+      return;
+    }
+
+    if (!activeSection) {
+      activeSection = {
+        title: 'Setlist',
+        songs: [],
+      };
+      sections.push(activeSection);
+    }
+
+    activeSection.songs.push(entry);
+  });
+
+  return (
+    <div className="space-y-3">
+      {sections.map((section, sectionIndex) => (
+        <div key={`${section.title}-${sectionIndex}`} className="rounded-2xl border border-slate-800 bg-slate-950/70 p-3">
+          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-cyan-400">{section.title}</p>
+          <ul className="mt-2 space-y-2 text-sm text-slate-300">
+            {section.songs.map((item, index) => (
+              <li key={`${section.title}-${index}`} className="flex items-start gap-2">
+                <span className="mt-1 h-2 w-2 flex-none rounded-full bg-cyan-500" />
+                <span>
+                  <span>{item.label}</span>
+                  {item.notes ? <span className="block text-xs text-slate-500">{item.notes}</span> : null}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function renderPhishInAudioMessage(phishInLinks) {
+  const status = String(phishInLinks?.audioStatus || '').toLowerCase();
+  if (!status) {
+    return null;
+  }
+
+  if (status === 'missing') {
+    return 'No audio is currently available for this show on phish.in.';
+  }
+
+  if (status === 'partial') {
+    return 'Partial audio is available for this show on phish.in.';
+  }
+
+  if (status === 'complete') {
+    return 'Complete audio is available for this show on phish.in.';
+  }
+
+  return null;
+}
+
+export default function ShowMatchCard({ photoMetadata, show }) {
+  const locationVerified = useMemo(() => {
+    const photoLat = parseCoordinate(photoMetadata?.rawGpsLatitude ?? photoMetadata?.gpsLatitude);
+    const photoLon = parseCoordinate(photoMetadata?.rawGpsLongitude ?? photoMetadata?.gpsLongitude);
+    const venueLat = parseCoordinate(show?.latitude || show?.lat || show?.venueLatitude || show?.venue_lat);
+    const venueLon = parseCoordinate(show?.longitude || show?.lon || show?.venueLongitude || show?.venue_lon);
+
+    if (photoLat === null || photoLon === null || venueLat === null || venueLon === null) {
+      return false;
+    }
+
+    return haversineMiles(photoLat, photoLon, venueLat, venueLon) <= 5;
+  }, [photoMetadata, show]);
+
+  const setlistEntries = useMemo(() => formatSetlist(show?.setlist), [show]);
+  const dateSource = photoMetadata?.dateSource || 'unknown';
+  const timeSource = photoMetadata?.timeSource || dateSource || 'unknown';
+  const gpsSource = photoMetadata?.gpsSource || photoMetadata?.locationSource || 'unknown';
+  const dateConfidence = sourceConfidence(dateSource);
+  const timeConfidence = sourceConfidence(timeSource);
+  const gpsConfidence = sourceConfidence(gpsSource);
+  const timeContext = useMemo(() => inferTimeContext(photoMetadata, show, setlistEntries), [photoMetadata, setlistEntries, show]);
+  const [phishInLinks, setPhishInLinks] = useState({
+    showUrl: null,
+    songUrl: null,
+    songTitle: null,
+    audioStatus: null,
+    error: null,
+    loading: false,
+  });
+  const phishInAudioMessage = useMemo(() => renderPhishInAudioMessage(phishInLinks), [phishInLinks]);
+
+  useEffect(() => {
+    if (!show?.date) {
+      setPhishInLinks({
+        showUrl: null,
+        songUrl: null,
+        songTitle: null,
+        audioStatus: null,
+        error: null,
+        loading: false,
+      });
+      return;
+    }
+
+    let isActive = true;
+    setPhishInLinks((current) => ({
+      ...current,
+      loading: true,
+      error: null,
+    }));
+
+    getPhishInShowLinks({ dateString: show.date, songTitle: timeContext?.songLabel || null })
+      .then((result) => {
+        if (!isActive) {
+          return;
+        }
+        setPhishInLinks({
+          showUrl: result?.showUrl || null,
+          songUrl: result?.songUrl || null,
+          songTitle: result?.songTitle || null,
+          audioStatus: result?.audioStatus || null,
+          error: result?.error || null,
+          loading: false,
+        });
+      })
+      .catch(() => {
+        if (!isActive) {
+          return;
+        }
+        setPhishInLinks({
+          showUrl: null,
+          songUrl: null,
+          songTitle: null,
+          audioStatus: null,
+          error: 'Unable to load Phish.in links right now.',
+          loading: false,
+        });
+      });
+
+    return () => {
+      isActive = false;
+    };
+  }, [show?.date, timeContext?.songLabel]);
+
+  return (
+    <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-6 shadow-xl shadow-slate-950/30">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-400">Show match</p>
+          <h2 className="mt-2 text-2xl font-semibold text-white">{show?.venueName || 'Unknown venue'}</h2>
+          <p className="mt-1 text-sm text-slate-400">
+            {show?.city || 'Unknown city'}, {show?.state || 'Unknown state'} • {formatDate(show?.date)}
+          </p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${dateConfidence.classes}`}>
+              Date source: {sourceLabel(dateSource)} ({dateConfidence.label})
+            </span>
+            <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${timeConfidence.classes}`}>
+              Time source: {sourceLabel(timeSource)} ({timeConfidence.label})
+            </span>
+            <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${gpsConfidence.classes}`}>
+              Location source: {sourceLabel(gpsSource)} ({gpsConfidence.label})
+            </span>
+            {timeContext ? (
+              <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${timeContext.confidence === 'medium' ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-300' : 'border-amber-500/40 bg-amber-500/10 text-amber-300'}`}>
+                {timeContext.label}
+              </span>
+            ) : null}
+          </div>
+          <div className="mt-3 flex flex-col gap-1 text-xs text-cyan-300">
+            {phishInLinks.loading ? <span className="text-slate-400">Loading Phish.in links...</span> : null}
+            {!phishInLinks.loading && !phishInLinks.error && !phishInLinks.showUrl ? (
+              <span className="text-amber-300">No phish.in show page was found for this date.</span>
+            ) : null}
+            {phishInLinks.showUrl ? (
+              <a href={phishInLinks.showUrl} target="_blank" rel="noreferrer" className="underline hover:text-cyan-200">
+                Open this show on phish.in
+              </a>
+            ) : null}
+            {timeContext?.songLabel && phishInLinks.songUrl ? (
+              <a href={phishInLinks.songUrl} target="_blank" rel="noreferrer" className="underline hover:text-cyan-200">
+                Open estimated song on phish.in ({phishInLinks.songTitle || timeContext.songLabel})
+              </a>
+            ) : null}
+            {!phishInLinks.loading && !phishInLinks.error && timeContext?.songLabel && phishInLinks.showUrl && !phishInLinks.songUrl ? (
+              <span className="text-slate-400">A matching track link was not found for the estimated song on phish.in.</span>
+            ) : null}
+            {phishInAudioMessage ? <span className="text-amber-300">{phishInAudioMessage}</span> : null}
+            {phishInLinks.error ? <span className="text-amber-300">{phishInLinks.error}</span> : null}
+          </div>
+        </div>
+        {locationVerified ? (
+          <span className="inline-flex items-center rounded-full border border-emerald-500/40 bg-emerald-500/10 px-3 py-1 text-sm font-medium text-emerald-300">
+            Location Verified
+          </span>
+        ) : null}
+      </div>
+
+      <div className="mt-6 grid gap-4 md:grid-cols-2">
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
+          <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Photo metadata</p>
+          <dl className="mt-3 space-y-2 text-sm text-slate-300">
+            <div className="flex justify-between gap-4">
+              <dt className="text-slate-500">Date</dt>
+              <dd>{photoMetadata?.dateTimeOriginalDisplay || photoMetadata?.dateTimeOriginal || 'Unknown'}</dd>
+            </div>
+            {photoMetadata?.timeTaken ? (
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-500">Time</dt>
+                <dd>{photoMetadata.timeTaken}</dd>
+              </div>
+            ) : null}
+            <div className="flex justify-between gap-4">
+              <dt className="text-slate-500">Latitude</dt>
+              <dd>{photoMetadata?.gpsLatitude || 'Unknown'}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="text-slate-500">Longitude</dt>
+              <dd>{photoMetadata?.gpsLongitude || 'Unknown'}</dd>
+            </div>
+            {photoMetadata?.locationSource ? (
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-500">Location source</dt>
+                <dd>{photoMetadata.locationSource}</dd>
+              </div>
+            ) : null}
+            {Array.isArray(photoMetadata?.userTags) && photoMetadata.userTags.length > 0 ? (
+              <div className="flex justify-between gap-4">
+                <dt className="text-slate-500">Tags</dt>
+                <dd className="text-right">{photoMetadata.userTags.join(', ')}</dd>
+              </div>
+            ) : null}
+          </dl>
+        </div>
+
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
+          <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Show details</p>
+          <dl className="mt-3 space-y-2 text-sm text-slate-300">
+            <div className="flex justify-between gap-4">
+              <dt className="text-slate-500">Venue</dt>
+              <dd>{show?.venueName || 'Unknown'}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="text-slate-500">Location</dt>
+              <dd>{[show?.city, show?.state].filter(Boolean).join(', ') || 'Unknown'}</dd>
+            </div>
+            <div className="flex justify-between gap-4">
+              <dt className="text-slate-500">Date</dt>
+              <dd>{formatDate(show?.date)}</dd>
+            </div>
+          </dl>
+        </div>
+      </div>
+
+      <div className="mt-6">
+        <p className="text-xs uppercase tracking-[0.25em] text-slate-500">Setlist</p>
+        <div className="mt-3">{renderSetlist(setlistEntries)}</div>
+        {show?.setlistNotes ? (
+          <p className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/70 p-3 text-sm text-slate-300">
+            {show.setlistNotes}
+          </p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
