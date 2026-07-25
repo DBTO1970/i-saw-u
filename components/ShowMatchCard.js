@@ -114,7 +114,6 @@ function sourceConfidence(source) {
   }
 }
 
-// Dynamic styling maps for Traffic Light Colors (Green/Yellow/Red)
 function getColorClasses(color) {
   switch (color) {
     case 'green':
@@ -233,7 +232,7 @@ function buildSongTimeline(entries, showStart) {
   return { segments, durationCoverage };
 }
 
-function inferTimeContext(photoMetadata, show, setlistEntries) {
+function inferTimeContext(photoMetadata, show, setlistEntries, startTimeString = '19:30') {
   const photoDateTime = parsePhotoDateTime(photoMetadata);
   const showDate = parseShowDate(show);
   if (!photoDateTime || !showDate) {
@@ -243,6 +242,7 @@ function inferTimeContext(photoMetadata, show, setlistEntries) {
   const diffHours = (photoDateTime.getTime() - showDate.getTime()) / (1000 * 60 * 60);
   if (Math.abs(diffHours) > 24) {
     return {
+      phase: 'outside',
       label: 'Outside ±24h of show date',
       confidence: 'low',
       color: 'red',
@@ -250,7 +250,7 @@ function inferTimeContext(photoMetadata, show, setlistEntries) {
     };
   }
 
-  const showStart = new Date(`${show.date}T19:30:00`);
+  const showStart = new Date(`${show.date}T${startTimeString}:00`);
   const { segments, durationCoverage } = buildSongTimeline(setlistEntries, showStart);
   const showEnd = segments.length > 0
     ? new Date(segments[segments.length - 1].end.getTime())
@@ -268,6 +268,7 @@ function inferTimeContext(photoMetadata, show, setlistEntries) {
 
   if (photoDateTime < showStart) {
     return {
+      phase: 'pre',
       label: 'Pre-show',
       confidence: 'medium',
       color: 'yellow',
@@ -277,6 +278,7 @@ function inferTimeContext(photoMetadata, show, setlistEntries) {
 
   if (photoDateTime > showEnd) {
     return {
+      phase: 'post',
       label: 'Post-show',
       confidence: 'medium',
       color: 'yellow',
@@ -297,6 +299,7 @@ function inferTimeContext(photoMetadata, show, setlistEntries) {
     const { confidence, color } = calculateConfidenceAndColor(true);
 
     return {
+      phase: 'during',
       label: `Estimated song: ${currentSong.label}`,
       confidence,
       color,
@@ -317,6 +320,7 @@ function inferTimeContext(photoMetadata, show, setlistEntries) {
 
   if (breakMatch) {
     return {
+      phase: 'during',
       label: breakMatch.label,
       confidence,
       color,
@@ -325,6 +329,7 @@ function inferTimeContext(photoMetadata, show, setlistEntries) {
   }
 
   return {
+    phase: 'during',
     label: 'During show (song estimate unavailable)',
     confidence,
     color: 'red',
@@ -442,7 +447,32 @@ function renderPhishInAudioMessage(phishInLinks) {
   return null;
 }
 
+// Convert minutes past midnight (e.g. 1170) to formatted string "7:30 PM"
+function formatMinutesToTime(totalMinutes) {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const period = hours >= 12 ? 'PM' : 'AM';
+  const displayHours = hours % 12 || 12;
+  const displayMinutes = minutes < 10 ? `0${minutes}` : minutes;
+  return `${displayHours}:${displayMinutes} ${period}`;
+}
+
+// Convert minutes past midnight to "HH:MM" 24h string
+function formatMinutesTo24h(totalMinutes) {
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  const hStr = hours < 10 ? `0${hours}` : hours;
+  const mStr = minutes < 10 ? `0${minutes}` : minutes;
+  return `${hStr}:${mStr}`;
+}
+
 export default function ShowMatchCard({ photoMetadata, show }) {
+  // Estimated start time state (in minutes from midnight, default 19:30 / 1170 min)
+  const [startMinutes, setStartMinutes] = useState(19 * 60 + 30);
+
+  const startTimeFormatted = useMemo(() => formatMinutesToTime(startMinutes), [startMinutes]);
+  const startTime24h = useMemo(() => formatMinutesTo24h(startMinutes), [startMinutes]);
+
   const locationVerified = useMemo(() => {
     const photoLat = parseCoordinate(photoMetadata?.rawGpsLatitude ?? photoMetadata?.gpsLatitude);
     const photoLon = parseCoordinate(photoMetadata?.rawGpsLongitude ?? photoMetadata?.gpsLongitude);
@@ -463,8 +493,11 @@ export default function ShowMatchCard({ photoMetadata, show }) {
   const dateConfidence = sourceConfidence(dateSource);
   const timeConfidence = sourceConfidence(timeSource);
   const gpsConfidence = sourceConfidence(gpsSource);
-  
-  const timeContext = useMemo(() => inferTimeContext(photoMetadata, show, setlistEntries), [photoMetadata, setlistEntries, show]);
+
+  const timeContext = useMemo(
+    () => inferTimeContext(photoMetadata, show, setlistEntries, startTime24h),
+    [photoMetadata, show, setlistEntries, startTime24h]
+  );
 
   const [phishInLinks, setPhishInLinks] = useState({
     showUrl: null,
@@ -532,12 +565,13 @@ export default function ShowMatchCard({ photoMetadata, show }) {
   return (
     <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-4 shadow-xl shadow-slate-950/30 sm:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-400">Show match</p>
           <h2 className="mt-2 text-xl font-semibold text-white sm:text-2xl">{show?.venueName || 'Unknown venue'}</h2>
           <p className="mt-1 text-sm text-slate-400">
             {show?.city || 'Unknown city'}, {show?.state || 'Unknown state'} • {formatDate(show?.date)}
           </p>
+
           <div className="mt-2 flex flex-wrap gap-2">
             <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${dateConfidence.classes}`}>
               Date source: {sourceLabel(dateSource)} ({dateConfidence.label})
@@ -555,6 +589,54 @@ export default function ShowMatchCard({ photoMetadata, show }) {
             ) : null}
           </div>
 
+          {/* Start Time Adjuster & Visual Indicator Slider */}
+          <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
+            <p className="text-xs text-slate-300">
+              This is based on an estimated start time of: <span className="font-semibold text-cyan-300">{startTimeFormatted}</span>. Use slider to adjust.
+            </p>
+
+            <div className="mt-3 flex items-center gap-3">
+              <span className="text-xs text-slate-500 font-mono">5:00 PM</span>
+              <input
+                type="range"
+                min={17 * 60} // 5:00 PM
+                max={22 * 60} // 10:00 PM
+                step={5}      // 5-minute increments
+                value={startMinutes}
+                onChange={(e) => setStartMinutes(Number(e.target.value))}
+                className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-slate-800 accent-cyan-400"
+              />
+              <span className="text-xs text-slate-500 font-mono">10:00 PM</span>
+            </div>
+
+            {/* Visual Indicator of Photo Phase */}
+            <div className="mt-4 flex items-center justify-between border-t border-slate-800/80 pt-3 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-slate-400">Photo Position:</span>
+                {timeContext?.phase === 'pre' && (
+                  <span className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 font-medium text-amber-300">
+                    Pre-Show
+                  </span>
+                )}
+                {timeContext?.phase === 'during' && (
+                  <span className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 font-medium text-emerald-300">
+                    During Show ({timeContext.songLabel || 'Live'})
+                  </span>
+                )}
+                {timeContext?.phase === 'post' && (
+                  <span className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 font-medium text-amber-300">
+                    Post-Show
+                  </span>
+                )}
+                {timeContext?.phase === 'outside' && (
+                  <span className="rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 font-medium text-rose-300">
+                    Outside Show Window
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+
           {/* Song Neighborhood View (Song Before -> Song Match -> Song After) */}
           {timeContext?.songContext && (
             <div className="mt-4 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-800 bg-slate-950/80 p-3">
@@ -563,7 +645,7 @@ export default function ShowMatchCard({ photoMetadata, show }) {
                   ← Prev: {timeContext.songContext.previous.label}
                 </span>
               )}
-              
+
               <span className={`inline-flex items-center rounded-lg border px-3 py-1.5 text-xs font-semibold ${getColorClasses(timeContext.songContext.current.color)}`}>
                 Now: {timeContext.songContext.current.label}
               </span>
