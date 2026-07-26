@@ -613,7 +613,14 @@ async function parseSidecarFile(file) {
   return sidecar;
 }
 
-export default function ImageExifUploader({ onMetadataChange, matchedShowDate = '', showStartTime = '' }) {
+export default function ImageExifUploader({
+  onMetadataChange,
+  matchedShowDate = '',
+  showStartTime = '',
+  showData = null,
+  currentSongLabel = '',
+  timeContextLabel = '',
+}) {
   const [previewUrl, setPreviewUrl] = useState('');
   const [selectedFileName, setSelectedFileName] = useState('');
   const [selectedSidecarFileName, setSelectedSidecarFileName] = useState('');
@@ -665,6 +672,12 @@ export default function ImageExifUploader({ onMetadataChange, matchedShowDate = 
           showMetadata: {
             matchedShowDate: matchedShowDate || null,
             showStartTime: showStartTime || null,
+            venueName: showData?.venueName || null,
+            city: showData?.city || null,
+            state: showData?.state || null,
+            currentSong: currentSongLabel || null,
+            timeContextLabel: timeContextLabel || null,
+            showData: showData || null,
           },
         })
       );

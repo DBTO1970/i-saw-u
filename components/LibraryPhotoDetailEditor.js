@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { deletePhotoFromLibrary, updateUserLibraryPhotoMetadata } from '../app/actions/user-library';
+import ShowMatchCard from './ShowMatchCard';
 
 function safeJsonStringify(value) {
   try {
@@ -10,6 +11,29 @@ function safeJsonStringify(value) {
   } catch {
     return '{}';
   }
+}
+
+function toShowCardPhotoMetadata(form, rawExif) {
+  const latitude = form.gpsLatitude?.trim() || '';
+  const longitude = form.gpsLongitude?.trim() || '';
+  const dateTaken = form.dateTaken?.trim() || '';
+  const timeTaken = form.timeTaken?.trim() || '';
+
+  return {
+    dateTimeOriginal: dateTaken || 'Not available',
+    dateTimeOriginalDisplay: dateTaken || 'Not available',
+    timeTaken: timeTaken || 'Not available',
+    gpsLatitude: latitude || 'Not available',
+    gpsLongitude: longitude || 'Not available',
+    rawGpsLatitude: latitude ? Number(latitude) : null,
+    rawGpsLongitude: longitude ? Number(longitude) : null,
+    rawDateTimeOriginal: dateTaken ? `${dateTaken}${timeTaken ? ` ${timeTaken}` : ''}` : null,
+    dateSource: rawExif?.dateSource || 'manual',
+    timeSource: rawExif?.timeSource || 'manual',
+    gpsSource: rawExif?.gpsSource || rawExif?.locationSource || 'manual',
+    locationSource: rawExif?.locationSource || 'manual',
+    userTags: Array.isArray(rawExif?.userTags) ? rawExif.userTags : [],
+  };
 }
 
 export default function LibraryPhotoDetailEditor({ initialPhoto }) {
@@ -28,6 +52,35 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
     gpsLongitude: initialPhoto.gps_longitude != null ? String(initialPhoto.gps_longitude) : '',
     rawExif: safeJsonStringify(initialPhoto.raw_exif),
   });
+  const parsedRawExif = useMemo(() => {
+    try {
+      const parsed = JSON.parse(form.rawExif || '{}');
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return null;
+    }
+  }, [form.rawExif]);
+  const savedShowMetadata = parsedRawExif?.showMetadata && typeof parsedRawExif.showMetadata === 'object'
+    ? parsedRawExif.showMetadata
+    : null;
+  const savedShowData = savedShowMetadata?.showData && typeof savedShowMetadata.showData === 'object'
+    ? savedShowMetadata.showData
+    : null;
+  const showForCard = savedShowData || (
+    savedShowMetadata?.matchedShowDate || initialPhoto.matched_show_date
+      ? {
+          date: savedShowMetadata?.matchedShowDate || initialPhoto.matched_show_date || null,
+          venueName: savedShowMetadata?.venueName || 'Unknown venue',
+          city: savedShowMetadata?.city || null,
+          state: savedShowMetadata?.state || null,
+          setlist: [],
+        }
+      : null
+  );
+  const showCardPhotoMetadata = useMemo(
+    () => toShowCardPhotoMetadata(form, parsedRawExif || {}),
+    [form, parsedRawExif]
+  );
 
   const onChange = (field) => (event) => {
     setForm((current) => ({
@@ -183,6 +236,48 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
           </button>
         </div>
       </form>
+
+      {showForCard ? (
+        <ShowMatchCard
+          photoMetadata={showCardPhotoMetadata}
+          show={showForCard}
+          showStartTime={form.showStartTime || '19:30'}
+          onShowStartTimeChange={(nextTime) => {
+            setForm((current) => ({
+              ...current,
+              showStartTime: nextTime,
+            }));
+          }}
+          onTimeContextChange={(context) => {
+            setForm((current) => {
+              try {
+                const parsed = JSON.parse(current.rawExif || '{}');
+                const nextRawExif = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+                const nextShowMetadata = nextRawExif.showMetadata && typeof nextRawExif.showMetadata === 'object'
+                  ? { ...nextRawExif.showMetadata }
+                  : {};
+                nextShowMetadata.currentSong = context?.songLabel || null;
+                nextShowMetadata.timeContextLabel = context?.label || null;
+                nextRawExif.showMetadata = nextShowMetadata;
+                const nextRawExifText = JSON.stringify(nextRawExif, null, 2);
+                if (nextRawExifText === current.rawExif) {
+                  return current;
+                }
+                return {
+                  ...current,
+                  rawExif: nextRawExifText,
+                };
+              } catch {
+                return current;
+              }
+            });
+          }}
+        />
+      ) : (
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-300">
+          No saved show information found for this photo yet.
+        </div>
+      )}
     </section>
   );
 }

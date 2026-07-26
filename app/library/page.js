@@ -7,6 +7,20 @@ import LibraryPhotoDeleteButton from '../../components/LibraryPhotoDeleteButton'
 
 export const dynamic = 'force-dynamic';
 
+function getSavedShowMetadata(photo) {
+  const rawExif = photo?.raw_exif;
+  if (!rawExif || typeof rawExif !== 'object' || Array.isArray(rawExif)) {
+    return null;
+  }
+
+  const showMetadata = rawExif.showMetadata;
+  if (!showMetadata || typeof showMetadata !== 'object' || Array.isArray(showMetadata)) {
+    return null;
+  }
+
+  return showMetadata;
+}
+
 export default async function LibraryPage() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -46,12 +60,18 @@ export default async function LibraryPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {photos.map((photo) => (
-                <div
-                  key={photo.id}
-                  className="group relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60 p-4 transition-all hover:border-cyan-500/40"
-                >
-                  <Link href={`/library/photo/${photo.id}`} className="block">
+              {photos.map((photo) => {
+                const savedShowMetadata = getSavedShowMetadata(photo);
+                const showDate = savedShowMetadata?.matchedShowDate || photo.matched_show_date || null;
+                const venueName = savedShowMetadata?.venueName || savedShowMetadata?.showData?.venueName || 'Unknown venue';
+                const currentSong = savedShowMetadata?.currentSong || null;
+
+                return (
+                  <div
+                    key={photo.id}
+                    className="group relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60 p-4 transition-all hover:border-cyan-500/40"
+                  >
+                    <Link href={`/library/photo/${photo.id}`} className="block">
                     {photo.url ? (
                       <div className="relative mb-3 aspect-video w-full overflow-hidden rounded-xl bg-slate-900">
                         <img
@@ -68,6 +88,11 @@ export default async function LibraryPage() {
 
                     <div className="space-y-1 text-xs text-slate-300">
                       <p className="font-semibold text-white truncate">{photo.file_name}</p>
+                      <p className="text-cyan-300">
+                        Show: {showDate || 'Unknown date'}
+                      </p>
+                      <p className="text-slate-400 truncate">Venue: {venueName}</p>
+                      <p className="text-slate-400 truncate">Current song: {currentSong || 'Unknown'}</p>
                       <div className="flex items-center space-x-2 text-slate-400">
                         <span>Date Taken: {photo.date_taken || 'Unknown'}</span>
                         {photo.time_taken && <span>• {photo.time_taken}</span>}
@@ -83,17 +108,18 @@ export default async function LibraryPage() {
                       )}
                       <p className="pt-1 text-[11px] font-semibold text-cyan-300">Tap to open details & edit metadata →</p>
                     </div>
-                  </Link>
-                  <div className="mt-3 border-t border-slate-800 pt-3">
-                    <LibraryPhotoDeleteButton
-                      photoId={photo.id}
-                      storagePath={photo.storage_path}
-                      label="Delete photo"
-                      className="rounded-lg border border-red-500/50 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-200 transition hover:bg-red-500/20 disabled:opacity-60"
-                    />
+                    </Link>
+                    <div className="mt-3 border-t border-slate-800 pt-3">
+                      <LibraryPhotoDeleteButton
+                        photoId={photo.id}
+                        storagePath={photo.storage_path}
+                        label="Delete photo"
+                        className="rounded-lg border border-red-500/50 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-200 transition hover:bg-red-500/20 disabled:opacity-60"
+                      />
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>

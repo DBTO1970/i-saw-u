@@ -193,6 +193,8 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
   const [sharedImportHistory, setSharedImportHistory] = useState([]);
   const [uploaderSessionKey, setUploaderSessionKey] = useState(0);
   const [showStartTime, setShowStartTime] = useState('19:30');
+  const [currentSongLabel, setCurrentSongLabel] = useState('');
+  const [timeContextLabel, setTimeContextLabel] = useState('');
   const supplementalSectionRef = useRef(null);
   const supplementalVenueInputRef = useRef(null);
   const suppressMissingDateMessageRef = useRef(false);
@@ -572,6 +574,8 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
     setLocationSearchMessage('');
     setAutocompleteSuggestions({ venues: [], cities: [], states: [] });
     setShowStartTime('19:30');
+    setCurrentSongLabel('');
+    setTimeContextLabel('');
   };
 
   return (
@@ -590,6 +594,9 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
         onMetadataChange={setPhotoMetadata}
         matchedShowDate={effectiveShow?.date || ''}
         showStartTime={showStartTime}
+        showData={effectiveShow}
+        currentSongLabel={currentSongLabel}
+        timeContextLabel={timeContextLabel}
       />
 
       {initialSharedPhoto ? (
@@ -916,6 +923,10 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
           show={effectiveShow}
           showStartTime={showStartTime}
           onShowStartTimeChange={setShowStartTime}
+          onTimeContextChange={(context) => {
+            setCurrentSongLabel(context?.songLabel || '');
+            setTimeContextLabel(context?.label || '');
+          }}
         />
 
         {!suggestedShow && (nearbyShows.length > 0 || relatedDateShows.length > 0) ? (

@@ -486,7 +486,7 @@ function parseTimeStringToMinutes(value) {
   return hours * 60 + minutes;
 }
 
-export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19:30', onShowStartTimeChange }) {
+export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19:30', onShowStartTimeChange, onTimeContextChange }) {
   const [startMinutes, setStartMinutes] = useState(() => parseTimeStringToMinutes(showStartTime));
 
   useEffect(() => {
@@ -525,6 +525,10 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
     () => inferTimeContext(photoMetadata, show, setlistEntries, startTime24h),
     [photoMetadata, show, setlistEntries, startTime24h]
   );
+
+  useEffect(() => {
+    onTimeContextChange?.(timeContext || null);
+  }, [onTimeContextChange, timeContext]);
 
   const [phishInLinks, setPhishInLinks] = useState({
     showUrl: null,
