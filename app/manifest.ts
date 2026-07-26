@@ -1,7 +1,7 @@
-import { NextResponse } from 'next/server';
+import { MetadataRoute } from 'next';
 
-export function GET() {
-  return NextResponse.json({
+export default function manifest(): MetadataRoute.Manifest {
+  return {
     name: 'I Saw U',
     short_name: 'I Saw U',
     description: 'Identify show context from original photo EXIF metadata.',
@@ -32,16 +32,14 @@ export function GET() {
     ],
     share_target: {
       action: '/api/share-target',
-      method: 'POST',
+      method: 'post',
       enctype: 'multipart/form-data',
-      params: {
-        files: [
-          {
-            name: 'files',
-            accept: ['image/jpeg', 'image/heic', 'image/heif', 'image/png', 'image/*'],
-          },
-        ],
-      },
+      files: [
+        {
+          name: 'files',
+          accept: ['image/jpeg', 'image/heic', 'image/heif', 'image/png', 'image/*'],
+        },
+      ],
     },
-  });
+  };
 }

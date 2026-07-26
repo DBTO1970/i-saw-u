@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ExifReader from 'exifreader';
+import { convertToWebP } from '../lib/image-optimizer';
+import { savePhotoToLibrary } from '../app/actions/user-library';
 
 const emptyMetadata = {
   dateTimeOriginal: 'Not available',
@@ -611,7 +613,7 @@ async function parseSidecarFile(file) {
   return sidecar;
 }
 
-export default function ImageExifUploader({ onMetadataChange }) {
+export default function ImageExifUploader({ onMetadataChange, matchedShowDate = '', showStartTime = '' }) {
   const [previewUrl, setPreviewUrl] = useState('');
   const [selectedFileName, setSelectedFileName] = useState('');
   const [selectedSidecarFileName, setSelectedSidecarFileName] = useState('');
@@ -620,11 +622,65 @@ export default function ImageExifUploader({ onMetadataChange }) {
   const [isParsing, setIsParsing] = useState(false);
   const [error, setError] = useState('');
   const [sidecarError, setSidecarError] = useState('');
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState(null);
   const previewUrlRef = useRef('');
   const inputRef = useRef(null);
   const sidecarInputRef = useRef(null);
   const lastImageFileRef = useRef(null);
   const activeSidecarRef = useRef(null);
+
+  const handleSaveToLibrary = async () => {
+    if (!lastImageFileRef.current) {
+      return;
+    }
+
+    setIsSaving(true);
+    setSaveMessage(null);
+
+    try {
+      // 1. Client-side WebP optimization
+      const { webpBlob, originalName } = await convertToWebP(lastImageFileRef.current, {
+        maxWidth: 1920,
+        maxHeight: 1920,
+        quality: 0.85,
+      });
+
+      // 2. Build FormData
+      const formData = new FormData();
+      const webpFile = new File([webpBlob], originalName.replace(/\.[^/.]+$/, '') + '.webp', { type: 'image/webp' });
+
+      formData.append('file', webpFile);
+      formData.append('fileName', selectedFileName || originalName);
+      formData.append('dateTaken', metadata.dateTimeOriginal || '');
+      formData.append('timeTaken', metadata.timeTaken || '');
+      if (metadata.gpsLatitude !== 'Not available') formData.append('gpsLatitude', String(metadata.gpsLatitude));
+      if (metadata.gpsLongitude !== 'Not available') formData.append('gpsLongitude', String(metadata.gpsLongitude));
+      if (matchedShowDate) formData.append('matchedShowDate', matchedShowDate);
+      if (showStartTime) formData.append('showStartTime', showStartTime);
+      formData.append(
+        'rawExif',
+        JSON.stringify({
+          ...metadata,
+          showMetadata: {
+            matchedShowDate: matchedShowDate || null,
+            showStartTime: showStartTime || null,
+          },
+        })
+      );
+
+      const res = await savePhotoToLibrary(formData);
+      if (res.success) {
+        setSaveMessage({ type: 'success', text: 'Saved to your personal library!' });
+      } else {
+        setSaveMessage({ type: 'error', text: res.error || 'Failed to save photo.' });
+      }
+    } catch (err) {
+      setSaveMessage({ type: 'error', text: err.message || 'Error converting/uploading image.' });
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   useEffect(() => {
     return () => {
@@ -902,10 +958,31 @@ export default function ImageExifUploader({ onMetadataChange }) {
 
       {previewUrl && (
         <div className="overflow-hidden rounded-3xl border border-slate-800 bg-slate-900/70 shadow-xl shadow-slate-950/30">
-          <div className="border-b border-slate-800 p-4">
-            <p className="text-sm font-medium text-slate-300">Preview</p>
-            <p className="text-xs text-slate-500">{selectedFileName}</p>
+          <div className="flex flex-wrap items-center justify-between border-b border-slate-800 p-4 gap-2">
+            <div>
+              <p className="text-sm font-medium text-slate-300">Preview</p>
+              <p className="text-xs text-slate-500">{selectedFileName}</p>
+            </div>
+            <button
+              onClick={handleSaveToLibrary}
+              disabled={isSaving}
+              className="flex items-center space-x-2 rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-3.5 py-2 text-xs font-semibold text-cyan-300 transition-all hover:bg-cyan-500/20 hover:border-cyan-400 disabled:opacity-50"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+              </svg>
+              <span>{isSaving ? 'Optimizing & Saving...' : 'Save WebP to Library'}</span>
+            </button>
           </div>
+
+          {saveMessage && (
+            <div className={`mx-4 mt-4 rounded-xl border p-3 text-xs font-medium ${
+              saveMessage.type === 'success' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-red-500/30 bg-emerald-500/10 text-red-300'
+            }`}>
+              {saveMessage.text}
+            </div>
+          )}
+
           <div className="p-3 sm:p-6">
             <img src={previewUrl} alt="Uploaded preview" className="mx-auto max-h-[480px] w-full rounded-2xl object-contain" />
             <div className="mt-4 grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-3 sm:mt-6 sm:gap-4 sm:p-4 sm:grid-cols-2 lg:grid-cols-4">

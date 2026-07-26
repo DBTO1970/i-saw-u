@@ -136,6 +136,7 @@ function createEmptyPhotoMetadata() {
     rawGpsLongitude: null,
     rawGpsLatitudeRef: null,
     rawGpsLongitudeRef: null,
+    showStartTime: '19:30',
     sidecarFileName: '',
     sidecarUsed: false,
     userTags: [],
@@ -191,6 +192,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
   const [isLoadingAutocomplete, setIsLoadingAutocomplete] = useState(false);
   const [sharedImportHistory, setSharedImportHistory] = useState([]);
   const [uploaderSessionKey, setUploaderSessionKey] = useState(0);
+  const [showStartTime, setShowStartTime] = useState('19:30');
   const supplementalSectionRef = useRef(null);
   const supplementalVenueInputRef = useRef(null);
   const suppressMissingDateMessageRef = useRef(false);
@@ -542,8 +544,10 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
       next.gpsSource = 'manual';
     }
 
+    next.showStartTime = showStartTime;
+
     return next;
-  }, [overrideDate, overrideLatitude, overrideLongitude, overrideTags, overrideTime, photoMetadata, venueConfirmedFromShow]);
+  }, [overrideDate, overrideLatitude, overrideLongitude, overrideTags, overrideTime, photoMetadata, showStartTime, venueConfirmedFromShow]);
 
   const photoDerivedDate = useMemo(() => extractDateFromMetadata(effectivePhotoMetadata), [effectivePhotoMetadata]);
 
@@ -567,6 +571,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
     setLocationSearchResults([]);
     setLocationSearchMessage('');
     setAutocompleteSuggestions({ venues: [], cities: [], states: [] });
+    setShowStartTime('19:30');
   };
 
   return (
@@ -580,7 +585,12 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
         Clear current photo and start over
       </button>
       </div>
-      <ImageExifUploader key={`image-uploader-${uploaderSessionKey}`} onMetadataChange={setPhotoMetadata} />
+      <ImageExifUploader
+        key={`image-uploader-${uploaderSessionKey}`}
+        onMetadataChange={setPhotoMetadata}
+        matchedShowDate={effectiveShow?.date || ''}
+        showStartTime={showStartTime}
+      />
 
       {initialSharedPhoto ? (
         <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100">
@@ -901,7 +911,12 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
           </div>
         ) : null}
 
-        <ShowMatchCard photoMetadata={effectivePhotoMetadata} show={effectiveShow} />
+        <ShowMatchCard
+          photoMetadata={effectivePhotoMetadata}
+          show={effectiveShow}
+          showStartTime={showStartTime}
+          onShowStartTimeChange={setShowStartTime}
+        />
 
         {!suggestedShow && (nearbyShows.length > 0 || relatedDateShows.length > 0) ? (
           <div className="mt-4 space-y-4">

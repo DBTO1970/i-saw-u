@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { getPhishInShowLinks } from '../app/actions/shows';
+import { saveShowToLibrary } from '../app/actions/user-library';
 
 function toRadians(value) {
   return (value * Math.PI) / 180;
@@ -466,12 +467,38 @@ function formatMinutesTo24h(totalMinutes) {
   return `${hStr}:${mStr}`;
 }
 
-export default function ShowMatchCard({ photoMetadata, show }) {
-  // Estimated start time state (in minutes from midnight, default 19:30 / 1170 min)
-  const [startMinutes, setStartMinutes] = useState(19 * 60 + 30);
+function parseTimeStringToMinutes(value) {
+  if (typeof value !== 'string') {
+    return 19 * 60 + 30;
+  }
+
+  const match = value.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) {
+    return 19 * 60 + 30;
+  }
+
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  if (Number.isNaN(hours) || Number.isNaN(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
+    return 19 * 60 + 30;
+  }
+
+  return hours * 60 + minutes;
+}
+
+export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19:30', onShowStartTimeChange }) {
+  const [startMinutes, setStartMinutes] = useState(() => parseTimeStringToMinutes(showStartTime));
+
+  useEffect(() => {
+    setStartMinutes(parseTimeStringToMinutes(showStartTime));
+  }, [showStartTime]);
 
   const startTimeFormatted = useMemo(() => formatMinutesToTime(startMinutes), [startMinutes]);
   const startTime24h = useMemo(() => formatMinutesTo24h(startMinutes), [startMinutes]);
+
+  useEffect(() => {
+    onShowStartTimeChange?.(startTime24h);
+  }, [onShowStartTimeChange, startTime24h]);
 
   const locationVerified = useMemo(() => {
     const photoLat = parseCoordinate(photoMetadata?.rawGpsLatitude ?? photoMetadata?.gpsLatitude);
@@ -507,6 +534,38 @@ export default function ShowMatchCard({ photoMetadata, show }) {
     error: null,
     loading: false,
   });
+  const [isBookmarking, setIsBookmarking] = useState(false);
+  const [bookmarkStatus, setBookmarkStatus] = useState(null);
+
+  const handleBookmarkShow = async () => {
+    if (!show?.date) {
+      return;
+    }
+
+    setIsBookmarking(true);
+    setBookmarkStatus(null);
+
+    const res = await saveShowToLibrary(
+      show.date,
+      {
+        venue: show.venueName,
+        city: show.city,
+        state: show.state,
+        location: [show.city, show.state].filter(Boolean).join(', '),
+        setlistNotes: show.setlistNotes,
+      },
+      ''
+    );
+
+    if (res.success) {
+      setBookmarkStatus({ type: 'success', text: 'Show bookmarked to library!' });
+    } else {
+      setBookmarkStatus({ type: 'error', text: res.error || 'Failed to bookmark show.' });
+    }
+
+    setIsBookmarking(false);
+  };
+
   const phishInAudioMessage = useMemo(() => renderPhishInAudioMessage(phishInLinks), [phishInLinks]);
 
   useEffect(() => {
@@ -566,7 +625,30 @@ export default function ShowMatchCard({ photoMetadata, show }) {
     <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-4 shadow-xl shadow-slate-950/30 sm:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-400">Show match</p>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-400">Show match</p>
+            {show?.date && (
+              <button
+                onClick={handleBookmarkShow}
+                disabled={isBookmarking}
+                className="flex items-center space-x-1.5 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-300 transition-all hover:bg-amber-500/20 hover:border-amber-400 disabled:opacity-50"
+              >
+                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
+                </svg>
+                <span>{isBookmarking ? 'Saving...' : 'Bookmark Show'}</span>
+              </button>
+            )}
+          </div>
+
+          {bookmarkStatus && (
+            <div className={`mt-2 rounded-xl border p-2 text-xs font-medium ${
+              bookmarkStatus.type === 'success' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-red-500/30 bg-red-500/10 text-red-300'
+            }`}>
+              {bookmarkStatus.text}
+            </div>
+          )}
+
           <h2 className="mt-2 text-xl font-semibold text-white sm:text-2xl">{show?.venueName || 'Unknown venue'}</h2>
           <p className="mt-1 text-sm text-slate-400">
             {show?.city || 'Unknown city'}, {show?.state || 'Unknown state'} • {formatDate(show?.date)}
@@ -706,6 +788,10 @@ export default function ShowMatchCard({ photoMetadata, show }) {
                 <dd className="sm:text-right">{photoMetadata.timeTaken}</dd>
               </div>
             ) : null}
+            <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
+              <dt className="text-slate-500">Show start time</dt>
+              <dd className="sm:text-right">{showStartTime || '19:30'}</dd>
+            </div>
             <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
               <dt className="text-slate-500">Latitude</dt>
               <dd className="break-all sm:text-right">{photoMetadata?.gpsLatitude || 'Unknown'}</dd>
