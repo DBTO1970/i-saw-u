@@ -997,7 +997,13 @@ export default function ImageExifUploader({
           )}
 
           <div className="p-3 sm:p-6">
-            <img src={previewUrl} alt="Uploaded preview" className="mx-auto max-h-[480px] w-full rounded-2xl object-contain" />
+           <div className="mx-auto w-full max-w-3xl overflow-hidden rounded-2xl bg-slate-950/80 p-2">
+              <img 
+                src={previewUrl} 
+                alt="Uploaded preview" 
+                className="h-auto w-full rounded-xl object-contain" 
+              />
+            </div>
             <div className="mt-4 grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-3 sm:mt-6 sm:gap-4 sm:p-4 sm:grid-cols-2 lg:grid-cols-4">
               {infoRows.map((row) => (
                 <div key={row.label} className="rounded-2xl bg-slate-900/80 p-3 sm:p-4">

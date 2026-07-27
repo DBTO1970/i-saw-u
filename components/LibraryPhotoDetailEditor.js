@@ -139,7 +139,7 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
             <p className="text-sm font-semibold text-white">Photo</p>
             <p className="text-xs text-slate-500">{initialPhoto.file_name}</p>
           </div>
-          {initialPhoto.url ? (
+          {/* {initialPhoto.url ? (
             <button
               type="button"
               onClick={() => setIsFullscreenOpen(true)}
@@ -147,7 +147,7 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
             >
               Expand full screen
             </button>
-          ) : null}
+          ) : null} */}
         </div>
         {initialPhoto.url ? (
           <div className="p-4">

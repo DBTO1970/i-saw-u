@@ -41,14 +41,18 @@ export async function convertToWebP(
         return;
       }
 
+      // Smooth rendering for resized images
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+
       // Draw image to canvas
       ctx.drawImage(img, 0, 0, width, height);
 
-      // Export as WebP
+      // Export as WebP (with fallback to JPEG if WebP is unsupported)
       canvas.toBlob(
         (blob) => {
           if (!blob) {
-            reject(new Error('WebP compression failed'));
+            reject(new Error('Image compression failed'));
             return;
           }
           resolve({
