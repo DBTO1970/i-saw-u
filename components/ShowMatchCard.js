@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { getPhishInShowLinks } from '../app/actions/shows';
 import { saveShowToLibrary } from '../app/actions/user-library';
 
@@ -496,9 +496,13 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
   const startTimeFormatted = useMemo(() => formatMinutesToTime(startMinutes), [startMinutes]);
   const startTime24h = useMemo(() => formatMinutesTo24h(startMinutes), [startMinutes]);
 
+  // Use refs so the effects only re-fire when values change, not when callback
+  // references change (which would cause an infinite render loop in callers).
+  const onShowStartTimeChangeRef = useRef(onShowStartTimeChange);
+  onShowStartTimeChangeRef.current = onShowStartTimeChange;
   useEffect(() => {
-    onShowStartTimeChange?.(startTime24h);
-  }, [onShowStartTimeChange, startTime24h]);
+    onShowStartTimeChangeRef.current?.(startTime24h);
+  }, [startTime24h]);
 
   const locationVerified = useMemo(() => {
     const photoLat = parseCoordinate(photoMetadata?.rawGpsLatitude ?? photoMetadata?.gpsLatitude);
@@ -526,9 +530,11 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
     [photoMetadata, show, setlistEntries, startTime24h]
   );
 
+  const onTimeContextChangeRef = useRef(onTimeContextChange);
+  onTimeContextChangeRef.current = onTimeContextChange;
   useEffect(() => {
-    onTimeContextChange?.(timeContext || null);
-  }, [onTimeContextChange, timeContext]);
+    onTimeContextChangeRef.current?.(timeContext || null);
+  }, [timeContext]);
 
   const [phishInLinks, setPhishInLinks] = useState({
     showUrl: null,

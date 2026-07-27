@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { deletePhotoFromLibrary, updateUserLibraryPhotoMetadata } from '../app/actions/user-library';
 import ShowMatchCard from './ShowMatchCard';
@@ -81,6 +81,13 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
     () => toShowCardPhotoMetadata(form, parsedRawExif || {}),
     [form, parsedRawExif]
   );
+
+  const handleShowStartTimeChange = useCallback((nextTime) => {
+    setForm((current) => ({
+      ...current,
+      showStartTime: nextTime,
+    }));
+  }, []);
 
   const onChange = (field) => (event) => {
     setForm((current) => ({
@@ -242,36 +249,7 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
           photoMetadata={showCardPhotoMetadata}
           show={showForCard}
           showStartTime={form.showStartTime || '19:30'}
-          onShowStartTimeChange={(nextTime) => {
-            setForm((current) => ({
-              ...current,
-              showStartTime: nextTime,
-            }));
-          }}
-          onTimeContextChange={(context) => {
-            setForm((current) => {
-              try {
-                const parsed = JSON.parse(current.rawExif || '{}');
-                const nextRawExif = parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-                const nextShowMetadata = nextRawExif.showMetadata && typeof nextRawExif.showMetadata === 'object'
-                  ? { ...nextRawExif.showMetadata }
-                  : {};
-                nextShowMetadata.currentSong = context?.songLabel || null;
-                nextShowMetadata.timeContextLabel = context?.label || null;
-                nextRawExif.showMetadata = nextShowMetadata;
-                const nextRawExifText = JSON.stringify(nextRawExif, null, 2);
-                if (nextRawExifText === current.rawExif) {
-                  return current;
-                }
-                return {
-                  ...current,
-                  rawExif: nextRawExifText,
-                };
-              } catch {
-                return current;
-              }
-            });
-          }}
+          onShowStartTimeChange={handleShowStartTimeChange}
         />
       ) : (
         <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-300">
