@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getPhishInShowLinks } from '../app/actions/shows';
-import { saveShowToLibrary } from '../app/actions/user-library';
+import { saveShowToLibrary, removeShowFromLibraryByDate } from '../app/actions/user-library';
 
 function toRadians(value) {
   return (value * Math.PI) / 180;
@@ -548,31 +548,38 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
   const [bookmarkStatus, setBookmarkStatus] = useState(null);
   const [isBookmarked, setIsBookmarked] = useState(initialIsBookmarked);
 
-  const handleBookmarkShow = async () => {
-    if (!show?.date) {
-      return;
-    }
+  const handleBookmarkToggle = async () => {
+    if (!show?.date) return;
 
     setIsBookmarking(true);
     setBookmarkStatus(null);
 
-    const res = await saveShowToLibrary(
-      show.date,
-      {
-        venue: show.venueName,
-        city: show.city,
-        state: show.state,
-        location: [show.city, show.state].filter(Boolean).join(', '),
-        setlistNotes: show.setlistNotes,
-      },
-      ''
-    );
-
-    if (res.success) {
-      setBookmarkStatus({ type: 'success', text: 'Show bookmarked to library!' });
-      setIsBookmarked(true);
+    if (isBookmarked) {
+      const res = await removeShowFromLibraryByDate(show.date);
+      if (res.success) {
+        setIsBookmarked(false);
+        setBookmarkStatus({ type: 'success', text: 'Bookmark removed.' });
+      } else {
+        setBookmarkStatus({ type: 'error', text: res.error || 'Failed to remove bookmark.' });
+      }
     } else {
-      setBookmarkStatus({ type: 'error', text: res.error || 'Failed to bookmark show.' });
+      const res = await saveShowToLibrary(
+        show.date,
+        {
+          venue: show.venueName,
+          city: show.city,
+          state: show.state,
+          location: [show.city, show.state].filter(Boolean).join(', '),
+          setlistNotes: show.setlistNotes,
+        },
+        ''
+      );
+      if (res.success) {
+        setIsBookmarked(true);
+        setBookmarkStatus({ type: 'success', text: 'Show bookmarked!' });
+      } else {
+        setBookmarkStatus({ type: 'error', text: res.error || 'Failed to bookmark show.' });
+      }
     }
 
     setIsBookmarking(false);
@@ -641,11 +648,11 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
             <p className="text-sm font-semibold uppercase tracking-[0.28em] text-cyan-400">Show match</p>
             {show?.date && (
               <button
-                onClick={handleBookmarkShow}
-                disabled={isBookmarking || isBookmarked}
+                onClick={handleBookmarkToggle}
+                disabled={isBookmarking}
                 className={`flex items-center space-x-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-60 ${
                   isBookmarked
-                    ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-300 cursor-default'
+                    ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-300 hover:bg-red-500/20 hover:border-red-500/50 hover:text-red-300'
                     : 'border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 hover:border-amber-400'
                 }`}
               >
@@ -653,7 +660,11 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
                   fill={isBookmarked ? 'currentColor' : 'none'}>
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
                 </svg>
-                <span>{isBookmarking ? 'Saving…' : isBookmarked ? 'Bookmarked' : 'Bookmark Show'}</span>
+                <span>
+                  {isBookmarking
+                    ? (isBookmarked ? 'Removing…' : 'Saving…')
+                    : (isBookmarked ? 'Bookmarked' : 'Bookmark Show')}
+                </span>
               </button>
             )}
           </div>

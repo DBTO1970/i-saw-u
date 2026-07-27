@@ -480,7 +480,35 @@ export async function deletePhotoFromLibrary(photoId, storagePath) {
 }
 
 /**
- * Delete a saved show from library
+ * Remove a bookmarked show by show_date (for the current user).
+ */
+export async function removeShowFromLibraryByDate(showDate) {
+  try {
+    const supabase = createClient();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      return { success: false, error: 'User not authenticated' };
+    }
+
+    const { error } = await supabase
+      .from('saved_shows')
+      .delete()
+      .eq('user_id', user.id)
+      .eq('show_date', showDate);
+
+    if (error) {
+      return { success: false, error: error.message };
+    }
+
+    return { success: true };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Delete a saved show from library (by row id)
  */
 export async function deleteSavedShow(showId) {
   try {
