@@ -377,6 +377,74 @@ export async function getUserSavedShows() {
 }
 
 /**
+ * Fetch a single saved show by show_date for the current user.
+ */
+export async function getUserSavedShowByDate(showDate) {
+  try {
+    const supabase = createClient();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      return { show: null, error: 'User not authenticated' };
+    }
+
+    const { data, error } = await supabase
+      .from('saved_shows')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('show_date', showDate)
+      .maybeSingle();
+
+    if (error) {
+      return { show: null, error: error.message };
+    }
+
+    return { show: data || null, error: null };
+  } catch (error) {
+    return { show: null, error: error.message };
+  }
+}
+
+/**
+ * Fetch all user-library photos that match a given show date,
+ * with signed URLs included.
+ */
+export async function getUserPhotosForShow(showDate) {
+  try {
+    const supabase = createClient();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      return { photos: [], error: 'User not authenticated' };
+    }
+
+    const { data: photos, error } = await supabase
+      .from('photos')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('matched_show_date', showDate)
+      .order('created_at', { ascending: true });
+
+    if (error) {
+      return { photos: [], error: error.message };
+    }
+
+    const photosWithUrls = await Promise.all(
+      (photos || []).map(async (photo) => {
+        const { data: signedData } = await supabase.storage
+          .from('user-photos')
+          .createSignedUrl(photo.storage_path, 60 * 60);
+        return { ...photo, url: signedData?.signedUrl || null };
+      })
+    );
+
+    return { photos: photosWithUrls, error: null };
+  } catch (error) {
+    return { photos: [], error: error.message };
+  }
+}
+
+/**
  * Delete a photo from library
  */
 export async function deletePhotoFromLibrary(photoId, storagePath) {

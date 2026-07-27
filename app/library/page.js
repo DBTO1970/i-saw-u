@@ -134,22 +134,50 @@ export default async function LibraryPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {shows.map((show) => (
-                <div key={show.id} className="rounded-2xl border border-slate-800 bg-slate-950/60 p-5 transition-all hover:border-cyan-500/40">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <span className="text-xs font-bold text-cyan-400">{show.show_date}</span>
-                      <h3 className="text-lg font-semibold text-white">{show.venue_name || 'Venue Unknown'}</h3>
-                      <p className="text-xs text-slate-400">{show.location || ''}</p>
-                    </div>
+              {shows.map((show) => {
+                const phishNetUrl =
+                  show.show_data?.phishNetUrl ||
+                  (show.show_date
+                    ? `https://phish.net/setlists/?d=${encodeURIComponent(show.show_date)}`
+                    : null);
+
+                return (
+                  <div key={show.id} className="rounded-2xl border border-slate-800 bg-slate-950/60 transition-all hover:border-cyan-500/40 overflow-hidden">
+                    <Link
+                      href={`/library/show/${show.show_date}`}
+                      className="block p-5"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <span className="text-xs font-bold text-cyan-400">{show.show_date}</span>
+                          <h3 className="mt-0.5 text-lg font-semibold text-white">{show.venue_name || 'Venue Unknown'}</h3>
+                          <p className="text-xs text-slate-400">{show.location || ''}</p>
+                        </div>
+                        <span className="shrink-0 rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] font-semibold text-slate-300">
+                          View show →
+                        </span>
+                      </div>
+                      {show.user_notes && (
+                        <p className="mt-3 rounded-xl bg-slate-900/90 p-3 text-xs italic text-slate-300">
+                          "{show.user_notes}"
+                        </p>
+                      )}
+                    </Link>
+                    {phishNetUrl && (
+                      <div className="border-t border-slate-800 px-5 py-3">
+                        <a
+                          href={phishNetUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs font-medium text-cyan-400 underline hover:text-cyan-300"
+                        >
+                          Open on phish.net ↗
+                        </a>
+                      </div>
+                    )}
                   </div>
-                  {show.user_notes && (
-                    <p className="mt-3 rounded-xl bg-slate-900/90 p-3 text-xs italic text-slate-300">
-                      "{show.user_notes}"
-                    </p>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>

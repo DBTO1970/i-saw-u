@@ -486,7 +486,7 @@ function parseTimeStringToMinutes(value) {
   return hours * 60 + minutes;
 }
 
-export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19:30', onShowStartTimeChange, onTimeContextChange }) {
+export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19:30', onShowStartTimeChange, onTimeContextChange, initialIsBookmarked = false }) {
   const [startMinutes, setStartMinutes] = useState(() => parseTimeStringToMinutes(showStartTime));
 
   useEffect(() => {
@@ -546,6 +546,7 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
   });
   const [isBookmarking, setIsBookmarking] = useState(false);
   const [bookmarkStatus, setBookmarkStatus] = useState(null);
+  const [isBookmarked, setIsBookmarked] = useState(initialIsBookmarked);
 
   const handleBookmarkShow = async () => {
     if (!show?.date) {
@@ -569,6 +570,7 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
 
     if (res.success) {
       setBookmarkStatus({ type: 'success', text: 'Show bookmarked to library!' });
+      setIsBookmarked(true);
     } else {
       setBookmarkStatus({ type: 'error', text: res.error || 'Failed to bookmark show.' });
     }
@@ -640,13 +642,18 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
             {show?.date && (
               <button
                 onClick={handleBookmarkShow}
-                disabled={isBookmarking}
-                className="flex items-center space-x-1.5 rounded-xl border border-amber-500/40 bg-amber-500/10 px-3 py-1.5 text-xs font-semibold text-amber-300 transition-all hover:bg-amber-500/20 hover:border-amber-400 disabled:opacity-50"
+                disabled={isBookmarking || isBookmarked}
+                className={`flex items-center space-x-1.5 rounded-xl border px-3 py-1.5 text-xs font-semibold transition-all disabled:opacity-60 ${
+                  isBookmarked
+                    ? 'border-emerald-500/50 bg-emerald-500/20 text-emerald-300 cursor-default'
+                    : 'border-amber-500/40 bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 hover:border-amber-400'
+                }`}
               >
-                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <svg className="h-4 w-4" viewBox="0 0 24 24" stroke="currentColor"
+                  fill={isBookmarked ? 'currentColor' : 'none'}>
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" />
                 </svg>
-                <span>{isBookmarking ? 'Saving...' : 'Bookmark Show'}</span>
+                <span>{isBookmarking ? 'Saving…' : isBookmarked ? 'Bookmarked' : 'Bookmark Show'}</span>
               </button>
             )}
           </div>
