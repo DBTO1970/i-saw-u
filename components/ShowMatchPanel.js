@@ -165,6 +165,55 @@ function formatSharedImportTimestamp(value) {
   return parsed.toLocaleString();
 }
 
+function readSharedImportHistory() {
+  if (typeof window === 'undefined') {
+    return [];
+  }
+
+  try {
+    const raw = window.localStorage.getItem(SHARED_IMPORT_HISTORY_KEY);
+    if (!raw) {
+      return [];
+    }
+
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+
+    return parsed.filter((entry) => entry && typeof entry.fileName === 'string').slice(0, 3);
+  } catch (error) {
+    console.error('Unable to read shared import history from localStorage:', error);
+    return [];
+  }
+}
+
+function writeSharedImportHistory(history) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(SHARED_IMPORT_HISTORY_KEY, JSON.stringify(history));
+  } catch (error) {
+    console.error('Unable to save shared import history to localStorage:', error);
+  }
+}
+
+function mergeSharedImportHistory(history, nextEntry) {
+  const safeHistory = Array.isArray(history) ? history : [];
+  const normalizedHistory = safeHistory.filter((entry) => entry && typeof entry.fileName === 'string');
+
+  if (!nextEntry) {
+    return normalizedHistory.slice(0, 3);
+  }
+
+  return [
+    nextEntry,
+    ...normalizedHistory.filter((entry) => !(entry.fileName === nextEntry.fileName && entry.receivedAt === nextEntry.receivedAt)),
+  ].slice(0, 3);
+}
+
 export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult, initialSharedPhoto = null }) {
   const [photoMetadata, setPhotoMetadata] = useState(initialPhotoMetadata);
   const [showResult, setShowResult] = useState(initialShowResult);
@@ -209,22 +258,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
   const lookupPhotoDate = overrideDate || extractDateFromMetadata(photoMetadata) || activeDate || '';
 
   useEffect(() => {
-    if (typeof window === 'undefined') {
-      return;
-    }
-
-    let history = [];
-    try {
-      const raw = window.localStorage.getItem(SHARED_IMPORT_HISTORY_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          history = parsed.filter((entry) => entry && typeof entry.fileName === 'string').slice(0, 3);
-        }
-      }
-    } catch (error) {
-      console.error('Unable to read shared import history from localStorage:', error);
-    }
+    const storedHistory = readSharedImportHistory();
 
     if (initialSharedPhoto) {
       const nextEntry = {
@@ -232,21 +266,14 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
         receivedAt: initialSharedPhoto.receivedAt || new Date().toISOString(),
       };
 
-      history = [
-        nextEntry,
-        ...history.filter((entry) => !(entry.fileName === nextEntry.fileName && entry.receivedAt === nextEntry.receivedAt)),
-      ].slice(0, 3);
-
-      try {
-        window.localStorage.setItem(SHARED_IMPORT_HISTORY_KEY, JSON.stringify(history));
-      } catch (error) {
-        console.error('Unable to save shared import history:', error);
-      }
-
+      const nextHistory = mergeSharedImportHistory(storedHistory, nextEntry);
+      writeSharedImportHistory(nextHistory);
       document.cookie = 'sharedPhotoPayload=; Max-Age=0; path=/; SameSite=Lax';
+      setSharedImportHistory(nextHistory);
+      return;
     }
 
-    setSharedImportHistory(history);
+    setSharedImportHistory(storedHistory);
   }, [initialSharedPhoto]);
 
   const applyVenueAutocompleteMatch = (value) => {

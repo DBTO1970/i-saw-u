@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { deletePhotoFromLibrary, updateUserLibraryPhotoMetadata } from '../app/actions/user-library';
+import PhotoVisibilityToggle from './PhotoVisibilityToggle';
 import ShowMatchCard from './ShowMatchCard';
 
 function safeJsonStringify(value) {
@@ -175,6 +176,14 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
           />
         </div>
       ) : null}
+
+      <div className="flex items-center justify-between rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3">
+        <div>
+          <p className="text-sm font-semibold text-white">Visibility</p>
+          <p className="text-xs text-slate-500">Control whether other fans can see this photo in the show gallery.</p>
+        </div>
+        <PhotoVisibilityToggle photoId={initialPhoto.id} initialIsPublic={!!initialPhoto.is_public} />
+      </div>
 
       <form onSubmit={handleSave} className="space-y-4 rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
         <p className="text-sm font-semibold text-white">Metadata</p>

@@ -13,18 +13,21 @@ export interface Database {
         Row: {
           id: string;
           username: string | null;
+          display_name: string | null;
           avatar_url: string | null;
           updated_at: string;
         };
         Insert: {
           id: string;
           username?: string | null;
+          display_name?: string | null;
           avatar_url?: string | null;
           updated_at?: string;
         };
         Update: {
           id?: string;
           username?: string | null;
+          display_name?: string | null;
           avatar_url?: string | null;
           updated_at?: string;
         };
@@ -44,6 +47,7 @@ export interface Database {
           raw_exif: Json;
           matched_show_date: string | null;
           show_start_time: string | null;
+          is_public: boolean;
           created_at: string;
         };
         Insert: {
@@ -60,6 +64,7 @@ export interface Database {
           raw_exif?: Json;
           matched_show_date?: string | null;
           show_start_time?: string | null;
+          is_public?: boolean;
           created_at?: string;
         };
         Update: {
@@ -76,6 +81,7 @@ export interface Database {
           raw_exif?: Json;
           matched_show_date?: string | null;
           show_start_time?: string | null;
+          is_public?: boolean;
           created_at?: string;
         };
       };

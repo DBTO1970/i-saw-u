@@ -4,9 +4,11 @@ import Image from 'next/image';
 import { createClient } from '../../../../lib/supabase/server';
 import { getShowByDate } from '../../../actions/shows';
 import {
+  getPublicPhotosForShow,
   getUserSavedShowByDate,
   getUserPhotosForShow,
 } from '../../../actions/user-library';
+import FanGalleryGrid from '../../../../components/FanGalleryGrid';
 
 function isValidDate(d) {
   return /^\d{4}-\d{2}-\d{2}$/.test(d);
@@ -42,6 +44,8 @@ export default async function ShowDetailPage({ params }) {
     getUserPhotosForShow(showDate),
   ]);
 
+  const publicGalleryResult = savedShow ? await getPublicPhotosForShow(showDate) : { photos: [], error: null };
+
   // Combine: prefer live Phish.net data for rich details; fall back to saved row
   const showData = liveShow
     ? liveShow
@@ -49,17 +53,17 @@ export default async function ShowDetailPage({ params }) {
     ? savedShow.show_data
     : null;
 
-  const venueName = showData?.venueName || savedShow?.venue_name || 'Unknown Venue';
-  const location =
-    showData?.city && showData?.state
-      ? `${showData.city}, ${showData.state}`
-      : savedShow?.location || '';
   const phishNetUrl =
     showData?.phishNetUrl ||
     `https://phish.net/setlists/?d=${encodeURIComponent(showDate)}`;
   const phishInUrl = showData?.showUrl || `https://phish.in/${showDate}`;
 
   const setlist = showData?.setlist || [];
+  const showHeaderText = showData?.venueName || savedShow?.venue_name || 'Unknown Venue';
+  const showLocation =
+    showData?.city && showData?.state
+      ? `${showData.city}, ${showData.state}`
+      : savedShow?.location || '';
 
   // Build sections from the flat setlist array:
   // type 'set'/'encore' entries are section headers; type 'song' entries belong to the active section.
@@ -81,7 +85,6 @@ export default async function ShowDetailPage({ params }) {
 
   return (
     <div className="min-h-screen bg-slate-950 text-white">
-      {/* Header */}
       <div className="sticky top-0 z-10 border-b border-slate-800 bg-slate-950/95 backdrop-blur">
         <div className="mx-auto flex max-w-5xl items-center gap-4 px-4 py-3">
           <Link
@@ -94,78 +97,13 @@ export default async function ShowDetailPage({ params }) {
         </div>
       </div>
 
-      <div className="mx-auto max-w-5xl px-4 py-8 space-y-10">
-      
-        {/* Photos from this show */}
-        <section>
-          <h2 className="mb-4 text-lg font-bold text-white">
-            Your Photos from This Show
-            {photos.length > 0 && (
-              <span className="ml-2 rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-300">
-                {photos.length}
-              </span>
-            )}
-          </h2>
-          {photos.length === 0 ? (
-            <div className="rounded-xl border border-dashed border-slate-800 p-8 text-center text-slate-400 text-sm">
-              No photos from this show in your library yet.{' '}
-              <Link href="/" className="text-cyan-400 underline">
-                Upload one now →
-              </Link>
-            </div>
-          ) : (
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-              {photos.map((photo) => {
-                const exif = (() => {
-                  try { return JSON.parse(photo.raw_exif || '{}'); } catch { return {}; }
-                })();
-                const currentSong = exif.showMetadata?.currentSong || '';
-                const timeLabel = exif.showMetadata?.timeContextLabel || '';
-
-                return (
-                  <Link
-                    key={photo.id}
-                    href={`/library/photo/${photo.id}`}
-                    className="group relative overflow-hidden rounded-xl border border-slate-800 bg-slate-900 transition-all hover:border-cyan-500/50 hover:shadow-lg hover:shadow-cyan-900/20"
-                  >
-                    {photo.url ? (
-                      <div className="relative aspect-square w-full">
-                        <Image
-                          src={photo.url}
-                          alt={photo.filename || 'Photo'}
-                          fill
-                          className="object-cover transition-transform group-hover:scale-105"
-                          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
-                        />
-                      </div>
-                    ) : (
-                      <div className="flex aspect-square w-full items-center justify-center bg-slate-800 text-slate-600 text-xs">
-                        No preview
-                      </div>
-                    )}
-                    {(currentSong || timeLabel) && (
-                      <div className="p-2">
-                        {currentSong && (
-                          <p className="truncate text-xs font-semibold text-cyan-300">{currentSong}</p>
-                        )}
-                        {timeLabel && (
-                          <p className="truncate text-[10px] text-slate-400">{timeLabel}</p>
-                        )}
-                      </div>
-                    )}
-                  </Link>
-                );
-              })}
-            </div>
-          )}
-        </section>
-        {/* Show header card */}
+      <div className="mx-auto max-w-5xl space-y-10 px-4 py-8">
         <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <span className="text-xs font-bold text-cyan-400 tracking-widest uppercase">Phish</span>
-              <h1 className="mt-1 text-2xl font-bold text-white">{venueName}</h1>
-              {location && <p className="text-sm text-slate-400">{location}</p>}
+              <span className="text-xs font-bold uppercase tracking-widest text-cyan-400">Phish</span>
+              <h1 className="mt-1 text-2xl font-bold text-white">{showHeaderText}</h1>
+              {showLocation ? <p className="text-sm text-slate-400">{showLocation}</p> : null}
               <p className="mt-1 text-base font-semibold text-slate-300">{formatDate(showDate)}</p>
             </div>
             <div className="flex flex-wrap gap-2 sm:shrink-0">
@@ -173,7 +111,7 @@ export default async function ShowDetailPage({ params }) {
                 href={phishNetUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="rounded-lg bg-cyan-800/50 border border-cyan-700/50 px-4 py-2 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-700/60"
+                className="rounded-lg border border-cyan-700/50 bg-cyan-800/50 px-4 py-2 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-700/60"
               >
                 phish.net ↗
               </a>
@@ -181,7 +119,7 @@ export default async function ShowDetailPage({ params }) {
                 href={phishInUrl}
                 target="_blank"
                 rel="noreferrer"
-                className="rounded-lg bg-purple-800/50 border border-purple-700/50 px-4 py-2 text-xs font-semibold text-purple-200 transition hover:bg-purple-700/60"
+                className="rounded-lg border border-purple-700/50 bg-purple-800/50 px-4 py-2 text-xs font-semibold text-purple-200 transition hover:bg-purple-700/60"
               >
                 phish.in ↗
               </a>
@@ -189,7 +127,6 @@ export default async function ShowDetailPage({ params }) {
           </div>
         </div>
 
-        {/* Setlist */}
         {setGroups.length > 0 ? (
           <section>
             <h2 className="mb-4 text-lg font-bold text-white">Setlist</h2>
@@ -205,9 +142,7 @@ export default async function ShowDetailPage({ params }) {
                         <span className="mt-0.5 w-5 shrink-0 text-right text-xs text-slate-500">{i + 1}.</span>
                         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
                           <span className="text-sm text-white">{song.label}</span>
-                          {song.notes && (
-                            <span className="text-xs text-slate-400 italic">{song.notes}</span>
-                          )}
+                          {song.notes ? <span className="text-xs italic text-slate-400">{song.notes}</span> : null}
                         </div>
                       </li>
                     ))}
@@ -217,11 +152,11 @@ export default async function ShowDetailPage({ params }) {
             </div>
           </section>
         ) : showData ? (
-          <div className="rounded-xl border border-dashed border-slate-800 p-6 text-center text-slate-400 text-sm">
+          <div className="rounded-xl border border-dashed border-slate-800 p-6 text-center text-sm text-slate-400">
             Setlist data not available for this show.
           </div>
         ) : (
-          <div className="rounded-xl border border-dashed border-slate-800 p-6 text-center text-slate-400 text-sm">
+          <div className="rounded-xl border border-dashed border-slate-800 p-6 text-center text-sm text-slate-400">
             Could not load show data. Check back later or{' '}
             <a href={phishNetUrl} target="_blank" rel="noreferrer" className="text-cyan-400 underline">
               view on phish.net
@@ -230,6 +165,89 @@ export default async function ShowDetailPage({ params }) {
           </div>
         )}
 
+        <section className="space-y-4">
+          <h2 className="text-lg font-bold text-white">Fan Gallery</h2>
+          {!savedShow ? (
+            <div className="rounded-xl border border-dashed border-slate-800 p-6 text-center text-sm text-slate-400">
+              Bookmark this show to unlock the fan gallery.
+            </div>
+          ) : publicGalleryResult.error ? (
+            <div className="rounded-xl border border-dashed border-slate-800 p-6 text-center text-sm text-slate-400">
+              {publicGalleryResult.error}
+            </div>
+          ) : publicGalleryResult.photos.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-800 p-6 text-center text-sm text-slate-400">
+              No public fan photos yet for this show.
+            </div>
+          ) : (
+            <FanGalleryGrid photos={publicGalleryResult.photos} currentUserId={user.id} />
+          )}
+        </section>
+
+        <section className="space-y-4">
+          <h2 className="mb-4 text-lg font-bold text-white">
+            Your Photos from This Show
+            {photos.length > 0 ? (
+              <span className="ml-2 rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-300">
+                {photos.length}
+              </span>
+            ) : null}
+          </h2>
+          {photos.length === 0 ? (
+            <div className="rounded-xl border border-dashed border-slate-800 p-8 text-center text-sm text-slate-400">
+              No photos from this show in your library yet.{' '}
+              <Link href="/" className="text-cyan-400 underline">
+                Upload one now →
+              </Link>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+              {photos.map((photo) => {
+                const exif = (() => {
+                  try {
+                    return JSON.parse(photo.raw_exif || '{}');
+                  } catch {
+                    return {};
+                  }
+                })();
+                const currentSong = exif.showMetadata?.currentSong || '';
+                const timeLabel = exif.showMetadata?.timeContextLabel || '';
+
+                return (
+                  <Link
+                    key={photo.id}
+                    href={`/library/photo/${photo.id}`}
+                    className="group relative overflow-hidden rounded-xl border border-slate-800 bg-slate-900 transition-all hover:border-cyan-500/50 hover:shadow-lg hover:shadow-cyan-900/20"
+                  >
+                    {photo.url ? (
+                      <div className="relative aspect-square w-full">
+                        <Image
+                          src={photo.url}
+                          alt={photo.file_name || 'Photo'}
+                          fill
+                          className="object-cover transition-transform group-hover:scale-105"
+                          sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                        />
+                      </div>
+                    ) : (
+                      <div className="flex aspect-square w-full items-center justify-center bg-slate-800 text-xs text-slate-600">
+                        No preview
+                      </div>
+                    )}
+                    {(currentSong || timeLabel) ? (
+                      <div className="p-2">
+                        {currentSong ? (
+                          <p className="truncate text-xs font-semibold text-cyan-300">{currentSong}</p>
+                        ) : null}
+                        {timeLabel ? <p className="truncate text-[10px] text-slate-400">{timeLabel}</p> : null}
+                      </div>
+                    ) : null}
+                  </Link>
+                );
+              })}
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );

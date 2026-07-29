@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import UserNav from '../../components/UserNav';
 import LibraryPhotoDeleteButton from '../../components/LibraryPhotoDeleteButton';
+import PhotoVisibilityToggle from '../../components/PhotoVisibilityToggle';
 
 export const dynamic = 'force-dynamic';
 
@@ -106,10 +107,20 @@ export default async function LibraryPage() {
                           GPS: {photo.gps_latitude.toFixed(4)}, {photo.gps_longitude.toFixed(4)}
                         </p>
                       )}
+                      <div className="pt-1">
+                        <span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-wider ${
+                          photo.is_public
+                            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+                            : 'border-slate-700 bg-slate-900 text-slate-400'
+                        }`}>
+                          {photo.is_public ? 'Public' : 'Private'}
+                        </span>
+                      </div>
                       <p className="pt-1 text-[11px] font-semibold text-cyan-300">Tap to open details & edit metadata →</p>
                     </div>
                     </Link>
-                    <div className="mt-3 border-t border-slate-800 pt-3">
+                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-3">
+                      <PhotoVisibilityToggle photoId={photo.id} initialIsPublic={!!photo.is_public} />
                       <LibraryPhotoDeleteButton
                         photoId={photo.id}
                         storagePath={photo.storage_path}

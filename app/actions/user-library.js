@@ -24,6 +24,17 @@ function applyShowMetadata(rawExifValue, matchedShowDate, showStartTime) {
   return nextRawExif;
 }
 
+function visibilitySchemaMissingMessage(error) {
+  const message = error?.message || '';
+  if (
+    message.includes("Could not find the 'is_public' column") ||
+    message.includes('schema cache')
+  ) {
+    return 'Your Supabase database is missing the photos.is_public column. Apply migration 03_add_public_photo_visibility.sql, then refresh the schema cache.';
+  }
+  return null;
+}
+
 /**
  * Save photo & metadata to user library and Supabase Storage
  */
@@ -532,5 +543,150 @@ export async function deleteSavedShow(showId) {
     return { success: true };
   } catch (error) {
     return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Toggle a photo's public visibility for the authenticated owner.
+ */
+export async function togglePhotoVisibility(photoId, isPublic) {
+  try {
+    const supabase = createClient();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      return { success: false, error: 'User not authenticated' };
+    }
+
+    const { data, error } = await supabase
+      .from('photos')
+      .update({ is_public: !!isPublic })
+      .eq('id', photoId)
+      .eq('user_id', user.id)
+      .select('id, is_public')
+      .single();
+
+    if (error) {
+      return { success: false, error: visibilitySchemaMissingMessage(error) || error.message };
+    }
+
+    return { success: true, photo: data };
+  } catch (error) {
+    return { success: false, error: error.message };
+  }
+}
+
+/**
+ * Fetch public photos for a show, including creator profiles and basic fan stats.
+ */
+export async function getPublicPhotosForShow(showDate) {
+  try {
+    const supabase = createClient();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      return { photos: [], error: 'User not authenticated' };
+    }
+
+    const { data: savedShow, error: savedShowError } = await supabase
+      .from('saved_shows')
+      .select('id')
+      .eq('user_id', user.id)
+      .eq('show_date', showDate)
+      .maybeSingle();
+
+    if (savedShowError) {
+      return { photos: [], error: savedShowError.message };
+    }
+
+    if (!savedShow) {
+      return { photos: [], error: 'Bookmark this show to view the fan gallery.' };
+    }
+
+    const { data: photos, error } = await supabase
+      .from('photos')
+      .select('*')
+      .eq('matched_show_date', showDate)
+      .eq('is_public', true)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      return { photos: [], error: visibilitySchemaMissingMessage(error) || error.message };
+    }
+
+    const userIds = [...new Set((photos || []).map((photo) => photo.user_id).filter(Boolean))];
+    if (userIds.length === 0) {
+      return { photos: [], error: null };
+    }
+
+    const [{ data: profiles, error: profileError }, { data: showRows, error: showRowsError }, { data: publicRows, error: publicRowsError }] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('id, username, avatar_url, display_name')
+        .in('id', userIds),
+      supabase
+        .from('saved_shows')
+        .select('user_id')
+        .in('user_id', userIds),
+      supabase
+        .from('photos')
+        .select('user_id')
+        .eq('is_public', true)
+        .in('user_id', userIds),
+    ]);
+
+    if (profileError) {
+      return { photos: [], error: profileError.message };
+    }
+
+    if (showRowsError) {
+      return { photos: [], error: showRowsError.message };
+    }
+
+    if (publicRowsError) {
+      return { photos: [], error: publicRowsError.message };
+    }
+
+    const profileById = new Map((profiles || []).map((profile) => [profile.id, profile]));
+    const showsAttendedByUser = new Map();
+    const publicPhotosByUser = new Map();
+
+    (showRows || []).forEach((row) => {
+      showsAttendedByUser.set(row.user_id, (showsAttendedByUser.get(row.user_id) || 0) + 1);
+    });
+
+    (publicRows || []).forEach((row) => {
+      publicPhotosByUser.set(row.user_id, (publicPhotosByUser.get(row.user_id) || 0) + 1);
+    });
+
+    const photosWithUrls = await Promise.all(
+      (photos || []).map(async (photo) => {
+        const { data: signedData } = await supabase.storage
+          .from('user-photos')
+          .createSignedUrl(photo.storage_path, 60 * 60);
+
+        const creator = profileById.get(photo.user_id) || null;
+
+        return {
+          ...photo,
+          url: signedData?.signedUrl || null,
+          isMine: photo.user_id === user.id,
+          creator: creator ? {
+            id: creator.id,
+            username: creator.username,
+            display_name: creator.display_name,
+            avatar_url: creator.avatar_url,
+            stats: {
+              total_shows_attended: showsAttendedByUser.get(photo.user_id) || 0,
+              total_public_photos: publicPhotosByUser.get(photo.user_id) || 0,
+            },
+          } : null,
+        };
+      })
+    );
+
+    return { photos: photosWithUrls, error: null };
+  } catch (error) {
+    return { photos: [], error: error.message };
   }
 }
