@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getShowByDate, searchLocationAutocomplete, searchShowsByLocation } from '../app/actions/shows';
 import ImageExifUploader from './ImageExifUploader';
 import ShowMatchCard from './ShowMatchCard';
@@ -214,6 +214,34 @@ function mergeSharedImportHistory(history, nextEntry) {
   ].slice(0, 3);
 }
 
+function AccordionSection({ title, description, open, onToggle, children, accent = 'cyan' }) {
+  const accentClasses =
+    accent === 'amber'
+      ? 'border-amber-500/30 bg-amber-500/10 text-amber-200'
+      : 'border-cyan-500/30 bg-cyan-500/10 text-cyan-200';
+
+  return (
+    <details
+      open={open}
+      onToggle={(event) => onToggle?.(event.currentTarget.open)}
+      className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/70"
+    >
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3 marker:hidden">
+        <div className="min-w-0">
+          <span className={`inline-flex rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-[0.22em] ${accentClasses}`}>
+            {title}
+          </span>
+          {description ? <p className="mt-1 text-xs text-slate-400">{description}</p> : null}
+        </div>
+        <span className="shrink-0 text-xs font-medium text-slate-400">{open ? 'Collapse' : 'Expand'}</span>
+      </summary>
+      <div className="border-t border-slate-800 px-4 py-4">
+        {children}
+      </div>
+    </details>
+  );
+}
+
 export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult, initialSharedPhoto = null }) {
   const [photoMetadata, setPhotoMetadata] = useState(initialPhotoMetadata);
   const [showResult, setShowResult] = useState(initialShowResult);
@@ -244,6 +272,8 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
   const [showStartTime, setShowStartTime] = useState('19:30');
   const [currentSongLabel, setCurrentSongLabel] = useState('');
   const [timeContextLabel, setTimeContextLabel] = useState('');
+  const [isMatchSectionOpen, setIsMatchSectionOpen] = useState(true);
+  const [isSupplementalSectionOpen, setIsSupplementalSectionOpen] = useState(false);
   const supplementalSectionRef = useRef(null);
   const supplementalVenueInputRef = useRef(null);
   const suppressMissingDateMessageRef = useRef(false);
@@ -310,7 +340,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
   };
 
   const openManualVenueSearch = () => {
-    setShowSupplementalForm(true);
+    openSupplementalSection();
     setVenueConfirmedFromShow(false);
     setStatusMessage('Manual venue search/edit mode is open below. Update venue/date/time fields, then save.');
 
@@ -358,7 +388,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
     const nextCity = suggestedShow?.city || overrideCity;
     const nextState = suggestedShow?.state || overrideState;
 
-    setShowSupplementalForm(true);
+    openSupplementalSection();
     setVenueConfirmedFromShow(false);
     setOverrideVenueName(nextVenue);
     setOverrideCity(nextCity);
@@ -377,6 +407,11 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
       photoDate: lookupPhotoDate,
     });
   };
+
+  const openSupplementalSection = useCallback(() => {
+    setShowSupplementalForm(true);
+    setIsSupplementalSectionOpen(true);
+  }, []);
 
   useEffect(() => {
     if (!showSupplementalForm && hasEmbeddedGps) {
@@ -603,6 +638,8 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
     setShowStartTime('19:30');
     setCurrentSongLabel('');
     setTimeContextLabel('');
+    setIsMatchSectionOpen(true);
+    setIsSupplementalSectionOpen(false);
   };
 
   return (
@@ -616,39 +653,58 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
         Clear current photo and start over
       </button>
       </div>
-      <ImageExifUploader
-        key={`image-uploader-${uploaderSessionKey}`}
-        onMetadataChange={setPhotoMetadata}
-        matchedShowDate={effectiveShow?.date || ''}
-        showStartTime={showStartTime}
-        showData={effectiveShow}
-        currentSongLabel={currentSongLabel}
-        timeContextLabel={timeContextLabel}
-      />
 
-      {initialSharedPhoto ? (
-        <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100">
-          Shared photo received from your device share sheet: <strong>{initialSharedPhoto.fileName}</strong>
-        </div>
-      ) : null}
+    <ImageExifUploader
+      key={`image-uploader-${uploaderSessionKey}`}
+      onMetadataChange={setPhotoMetadata}
+      matchedShowDate={effectiveShow?.date || ''}
+      showStartTime={showStartTime}
+      showData={effectiveShow}
+      currentSongLabel={currentSongLabel}
+      timeContextLabel={timeContextLabel}
+    />
 
-      {sharedImportHistory.length > 0 ? (
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3">
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Recent shared imports</p>
-          <ul className="mt-2 space-y-1 text-xs text-slate-300">
-            {sharedImportHistory.map((entry, index) => (
-              <li key={`${entry.fileName}-${entry.receivedAt}-${index}`} className="flex items-center justify-between gap-2">
-                <span className="truncate">{entry.fileName}</span>
-                <span className="text-slate-500">{formatSharedImportTimestamp(entry.receivedAt)}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+    {initialSharedPhoto ? (
+      <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100">
+        Shared photo received from your device share sheet: <strong>{initialSharedPhoto.fileName}</strong>
+      </div>
+    ) : null}
 
-     
+    {sharedImportHistory.length > 0 ? (
+      <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Recent shared imports</p>
+        <ul className="mt-2 space-y-1 text-xs text-slate-300">
+          {sharedImportHistory.map((entry, index) => (
+            <li key={`${entry.fileName}-${entry.receivedAt}-${index}`} className="flex items-center justify-between gap-2">
+              <span className="truncate">{entry.fileName}</span>
+              <span className="text-slate-500">{formatSharedImportTimestamp(entry.receivedAt)}</span>
+            </li>
+          ))}
+        </ul>
+      </div>
+    ) : null}
+
+    <AccordionSection
+      title="Show matching"
+      description="Search by date, confirm the show, and review the match."
+      open={isMatchSectionOpen}
+      onToggle={setIsMatchSectionOpen}
+    >
+      <div className="space-y-4">
+        {statusMessage && !isLoadingShow ? (
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-300">
+            {statusMessage}
+          </div>
+        ) : null}
+
+        {isLoadingShow ? (
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-300">
+            Looking up the matching Phish show...
+          </div>
+        ) : null}
+
         <form
-          className="mb-4 flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-3 sm:flex-row sm:items-end sm:p-4"
+          className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-3 sm:flex-row sm:items-end sm:p-4"
           onSubmit={(event) => {
             event.preventDefault();
             if (!showLookupDate) {
@@ -685,7 +741,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
         </form>
 
         {photoDerivedDate ? (
-          <div className="mb-4 flex flex-col items-start gap-2 rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2 text-xs text-slate-300 sm:flex-row sm:flex-wrap sm:items-center">
+          <div className="flex flex-col items-start gap-2 rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2 text-xs text-slate-300 sm:flex-row sm:flex-wrap sm:items-center">
             <span>
               Photo date detected: <strong className="text-white">{photoDerivedDate}</strong>
             </span>
@@ -696,15 +752,16 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
                 setShowLookupDate(photoDerivedDate);
                 setActiveDate(photoDerivedDate);
                 setStatusMessage(`Using photo date ${photoDerivedDate} for show search.`);
+                setIsMatchSectionOpen(true);
               }}
-            >
+              >
               Use photo date
-            </button>
+              </button>
           </div>
         ) : null}
 
         {!hasEmbeddedGps && suggestedShow ? (
-          <div className="mb-4 rounded-2xl border border-cyan-500/30 bg-cyan-500/10 p-4 text-slate-200">
+          <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 p-4 text-slate-200">
             <p className="text-sm">
               <strong>No GPS metadata found in this photo.</strong>
             </p>
@@ -725,7 +782,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
                 className="w-full rounded-lg bg-cyan-500 px-3 py-2.5 text-xs font-medium text-slate-950 transition hover:bg-cyan-400 sm:w-auto"
                 onClick={() => {
                   setVenueConfirmedFromShow(true);
-                  setShowSupplementalForm(true);
+                  openSupplementalSection();
                   setOverrideVenueName(suggestedShow.venueName || '');
                   setOverrideCity(suggestedShow.city || '');
                   setOverrideState(suggestedShow.state || '');
@@ -751,213 +808,24 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
           </div>
         ) : null}
 
-        {(showSupplementalForm || !hasEmbeddedGps) ? (
-          <div ref={supplementalSectionRef} className="mb-4 rounded-2xl border border-slate-700 bg-slate-950/70 p-4">
-            <p className="text-sm font-medium text-white">Supplement photo metadata</p>
-            <p className="mt-1 text-xs text-slate-400">
-              Add details manually when embedded EXIF/XMP location or timestamp is missing.
-            </p>
-            <div className="mt-3 grid gap-3 md:grid-cols-2">
-              <label className="text-xs text-slate-300">
-                Venue
-                <input
-                  ref={supplementalVenueInputRef}
-                  list="venue-autocomplete-options"
-                  value={overrideVenueName}
-                  onChange={(e) => {
-                    setOverrideVenueName(e.target.value);
-                    applyVenueAutocompleteMatch(e.target.value);
-                  }}
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white"
-                />
-              </label>
-              <label className="text-xs text-slate-300">
-                City
-                <input
-                  list="city-autocomplete-options"
-                  value={overrideCity}
-                  onChange={(e) => {
-                    setOverrideCity(e.target.value);
-                    applyCityAutocompleteMatch(e.target.value);
-                  }}
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white"
-                />
-              </label>
-              <label className="text-xs text-slate-300">
-                State
-                <input list="state-autocomplete-options" value={overrideState} onChange={(e) => setOverrideState(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
-              </label>
-              <label className="text-xs text-slate-300">
-                Latitude
-                <input value={overrideLatitude} onChange={(e) => setOverrideLatitude(e.target.value)} placeholder="e.g. 40.7505" className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
-              </label>
-              <label className="text-xs text-slate-300">
-                Longitude
-                <input value={overrideLongitude} onChange={(e) => setOverrideLongitude(e.target.value)} placeholder="e.g. -73.9934" className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
-              </label>
-              <label className="text-xs text-slate-300">
-                Date
-                <input type="date" value={overrideDate} onChange={(e) => setOverrideDate(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
-              </label>
-              <label className="text-xs text-slate-300">
-                Time
-                <input type="time" value={supplementalTimeValue} onChange={(e) => setOverrideTime(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
-              </label>
-              <label className="text-xs text-slate-300 md:col-span-2">
-                Tags (comma-separated)
-                <input value={overrideTags} onChange={(e) => setOverrideTags(e.target.value)} placeholder="friends, lawn, opener set" className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
-              </label>
-            </div>
-            <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
-              <button
-                type="button"
-                disabled={isSearchingLocation}
-                className="w-full rounded-lg border border-cyan-500/60 px-3 py-2.5 text-xs font-medium text-cyan-200 transition hover:border-cyan-400 hover:bg-cyan-500/10 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-                onClick={() => runVenueLocationLookup()}
-              >
-                {isSearchingLocation ? 'Searching venue/city/state...' : 'Lookup by venue/city/state'}
-              </button>
-              <button
-                type="button"
-                className="w-full rounded-lg bg-cyan-500 px-3 py-2.5 text-xs font-medium text-slate-950 transition hover:bg-cyan-400 sm:w-auto"
-                onClick={() => {
-                  if (overrideDate) {
-                    setShowLookupDate(overrideDate);
-                    setActiveDate(overrideDate);
-                  }
-                  setStatusMessage('Supplemental metadata saved for this photo.');
-                }}
-              >
-                Save supplemental metadata
-              </button>
-              <button
-                type="button"
-                className="w-full rounded-lg border border-slate-600 px-3 py-2.5 text-xs font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-900 sm:w-auto"
-                onClick={() => {
-                  setVenueConfirmedFromShow(false);
-                  setOverrideVenueName('');
-                  setOverrideCity('');
-                  setOverrideState('');
-                  setOverrideLatitude('');
-                  setOverrideLongitude('');
-                  setOverrideDate(extractDateFromMetadata(photoMetadata) || '');
-                  setOverrideTime('');
-                  setOverrideTags('');
-                  setStatusMessage('Supplemental metadata cleared.');
-                }}
-              >
-                Clear supplemental metadata
-              </button>
-            </div>
-
-            {locationSearchMessage ? (
-              <p className="mt-3 text-xs text-slate-300">{locationSearchMessage}</p>
-            ) : null}
-
-            {isLoadingAutocomplete ? (
-              <p className="mt-2 text-xs text-slate-500">Loading venue/city/state suggestions...</p>
-            ) : null}
-
-            {locationSearchResults.length > 0 ? (
-              <div className="mt-3 rounded-xl border border-slate-800 bg-slate-900/60 p-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">Venue/location matches</p>
-                <ul className="mt-2 space-y-2">
-                  {locationSearchResults.map((match) => (
-                    <li key={`location-match-${match.date}-${match.venueName}-${match.city}-${match.state}`} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/70 p-2.5">
-                      <div className="text-xs text-slate-200">
-                        <p className="font-medium text-white">{match.venueName || 'Unknown venue'}</p>
-                        <p className="text-slate-400">
-                          {match.date} • {[match.city, match.state].filter(Boolean).join(', ') || 'Unknown location'}
-                        </p>
-                        <p className="text-cyan-300">
-                          Score {match.matchScore}
-                          {formatVenueSearchGap(match.dayDifference) ? ` • ${formatVenueSearchGap(match.dayDifference)}` : ''}
-                        </p>
-                      </div>
-                      <button
-                        type="button"
-                        className="rounded-md border border-slate-600 px-2.5 py-1.5 text-xs font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-900"
-                        onClick={() => {
-                          setOverrideVenueName(match.venueName || '');
-                          setOverrideCity(match.city || '');
-                          setOverrideState(match.state || '');
-                          if (match.latitude != null) {
-                            setOverrideLatitude(String(match.latitude));
-                          }
-                          if (match.longitude != null) {
-                            setOverrideLongitude(String(match.longitude));
-                          }
-                          if (match.date) {
-                            setOverrideDate(match.date);
-                            setShowLookupDate(match.date);
-                            setActiveDate(match.date);
-                          }
-                          setStatusMessage(`Using matched venue: ${match.venueName || 'Unknown venue'} (${match.date || 'unknown date'}).`);
-                        }}
-                      >
-                        Use this match
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : null}
-
-            <datalist id="venue-autocomplete-options">
-              {autocompleteSuggestions.venues.map((entry) => (
-                <option
-                  key={`venue-option-${entry.venueName}-${entry.city}-${entry.state}`}
-                  value={entry.venueName}
-                  label={`${entry.city}, ${entry.state}${entry.count ? ` (${entry.count})` : ''}`}
-                />
-              ))}
-            </datalist>
-            <datalist id="city-autocomplete-options">
-              {autocompleteSuggestions.cities.map((entry) => (
-                <option
-                  key={`city-option-${entry.city}-${entry.state}`}
-                  value={entry.city}
-                  label={`${entry.state}${entry.count ? ` (${entry.count})` : ''}`}
-                />
-              ))}
-            </datalist>
-            <datalist id="state-autocomplete-options">
-              {autocompleteSuggestions.states.map((entry) => (
-                <option
-                  key={`state-option-${entry.state}`}
-                  value={entry.state}
-                  label={entry.count ? `(${entry.count})` : ''}
-                />
-              ))}
-            </datalist>
-          </div>
+        {effectiveShow ? (
+          <ShowMatchCard
+            photoMetadata={effectivePhotoMetadata}
+            show={effectiveShow}
+            showStartTime={showStartTime}
+            onShowStartTimeChange={(nextTime) => {
+              setShowStartTime(nextTime);
+              openSupplementalSection();
+            }}
+            onTimeContextChange={(context) => {
+              setCurrentSongLabel(context?.songLabel || '');
+              setTimeContextLabel(context?.label || '');
+            }}
+          />
         ) : null}
-
-        {isLoadingShow ? (
-          <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-300">
-            Looking up the matching Phish show...
-          </div>
-        ) : null}
-
-        {statusMessage && !isLoadingShow ? (
-          <div className="mb-4 rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-300">
-            {statusMessage}
-          </div>
-        ) : null}
-
-        <ShowMatchCard
-          photoMetadata={effectivePhotoMetadata}
-          show={effectiveShow}
-          showStartTime={showStartTime}
-          onShowStartTimeChange={setShowStartTime}
-          onTimeContextChange={(context) => {
-            setCurrentSongLabel(context?.songLabel || '');
-            setTimeContextLabel(context?.label || '');
-          }}
-        />
 
         {!suggestedShow && (nearbyShows.length > 0 || relatedDateShows.length > 0) ? (
-          <div className="mt-4 space-y-4">
+          <div className="space-y-4">
             {nearbyShows.length > 0 ? (
               <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
                 <h3 className="text-sm font-semibold uppercase tracking-[0.22em] text-cyan-400">Nearby shows (within 6 days)</h3>
@@ -978,6 +846,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
                           setShowLookupDate(show.date);
                           setActiveDate(show.date);
                           setStatusMessage(`Using ${show.date} to fetch show details and setlist timing.`);
+                          setIsMatchSectionOpen(true);
                         }}
                       >
                         Use this show date
@@ -1008,6 +877,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
                           setShowLookupDate(show.date);
                           setActiveDate(show.date);
                           setStatusMessage(`Using ${show.date} to fetch show details and setlist timing.`);
+                          setIsMatchSectionOpen(true);
                         }}
                       >
                         Use this show date
@@ -1019,7 +889,192 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
             ) : null}
           </div>
         ) : null}
-      
+      </div>
+    </AccordionSection>
+
+    <AccordionSection
+      title="Supplemental photo metadata"
+      description="Add manual venue, location, or timestamp details when the file metadata is incomplete."
+      open={isSupplementalSectionOpen}
+      onToggle={setIsSupplementalSectionOpen}
+      accent="amber"
+    >
+      <div ref={supplementalSectionRef}>
+        <p className="text-xs text-slate-400">
+          Add details manually when embedded EXIF/XMP location or timestamp is missing.
+        </p>
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <label className="text-xs text-slate-300">
+            Venue
+            <input
+              ref={supplementalVenueInputRef}
+              list="venue-autocomplete-options"
+              value={overrideVenueName}
+              onChange={(e) => {
+                setOverrideVenueName(e.target.value);
+                applyVenueAutocompleteMatch(e.target.value);
+              }}
+              className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white"
+            />
+          </label>
+          <label className="text-xs text-slate-300">
+            City
+            <input
+              list="city-autocomplete-options"
+              value={overrideCity}
+              onChange={(e) => {
+                setOverrideCity(e.target.value);
+                applyCityAutocompleteMatch(e.target.value);
+              }}
+              className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white"
+            />
+          </label>
+          <label className="text-xs text-slate-300">
+            State
+            <input list="state-autocomplete-options" value={overrideState} onChange={(e) => setOverrideState(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
+          </label>
+          <label className="text-xs text-slate-300">
+            Latitude
+            <input value={overrideLatitude} onChange={(e) => setOverrideLatitude(e.target.value)} placeholder="e.g. 40.7505" className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
+          </label>
+          <label className="text-xs text-slate-300">
+            Longitude
+            <input value={overrideLongitude} onChange={(e) => setOverrideLongitude(e.target.value)} placeholder="e.g. -73.9934" className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
+          </label>
+          <label className="text-xs text-slate-300">
+            Date
+            <input type="date" value={overrideDate} onChange={(e) => setOverrideDate(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
+          </label>
+          <label className="text-xs text-slate-300">
+            Time
+            <input type="time" value={supplementalTimeValue} onChange={(e) => setOverrideTime(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
+          </label>
+          <label className="text-xs text-slate-300 md:col-span-2">
+            Tags (comma-separated)
+            <input value={overrideTags} onChange={(e) => setOverrideTags(e.target.value)} placeholder="friends, lawn, opener set" className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
+          </label>
+        </div>
+        <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
+          <button
+            type="button"
+            disabled={isSearchingLocation}
+            className="w-full rounded-lg border border-cyan-500/60 px-3 py-2.5 text-xs font-medium text-cyan-200 transition hover:border-cyan-400 hover:bg-cyan-500/10 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+            onClick={() => runVenueLocationLookup()}
+          >
+            {isSearchingLocation ? 'Searching venue/city/state...' : 'Lookup by venue/city/state'}
+          </button>
+          <button
+            type="button"
+            className="w-full rounded-lg bg-cyan-500 px-3 py-2.5 text-xs font-medium text-slate-950 transition hover:bg-cyan-400 sm:w-auto"
+            onClick={() => {
+              if (overrideDate) {
+                setShowLookupDate(overrideDate);
+                setActiveDate(overrideDate);
+                setIsMatchSectionOpen(true);
+              }
+              setStatusMessage('Supplemental metadata saved for this photo.');
+            }}
+          >
+            Save supplemental metadata
+          </button>
+          <button
+            type="button"
+            className="w-full rounded-lg border border-slate-600 px-3 py-2.5 text-xs font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-900 sm:w-auto"
+            onClick={() => {
+              setVenueConfirmedFromShow(false);
+              setOverrideVenueName('');
+              setOverrideCity('');
+              setOverrideState('');
+              setOverrideLatitude('');
+              setOverrideLongitude('');
+              setOverrideDate(extractDateFromMetadata(photoMetadata) || '');
+              setOverrideTime('');
+              setOverrideTags('');
+              setStatusMessage('Supplemental metadata cleared.');
+            }}
+          >
+            Clear supplemental metadata
+          </button>
+        </div>
+
+        {locationSearchMessage ? <p className="mt-3 text-xs text-slate-300">{locationSearchMessage}</p> : null}
+        {isLoadingAutocomplete ? <p className="mt-2 text-xs text-slate-500">Loading venue/city/state suggestions...</p> : null}
+
+        {locationSearchResults.length > 0 ? (
+          <div className="mt-3 rounded-xl border border-slate-800 bg-slate-900/60 p-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">Venue/location matches</p>
+            <ul className="mt-2 space-y-2">
+              {locationSearchResults.map((match) => (
+                <li key={`location-match-${match.date}-${match.venueName}-${match.city}-${match.state}`} className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-800 bg-slate-950/70 p-2.5">
+                  <div className="text-xs text-slate-200">
+                    <p className="font-medium text-white">{match.venueName || 'Unknown venue'}</p>
+                    <p className="text-slate-400">
+                      {match.date} • {[match.city, match.state].filter(Boolean).join(', ') || 'Unknown location'}
+                    </p>
+                    <p className="text-cyan-300">
+                      Score {match.matchScore}
+                      {formatVenueSearchGap(match.dayDifference) ? ` • ${formatVenueSearchGap(match.dayDifference)}` : ''}
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded-md border border-slate-600 px-2.5 py-1.5 text-xs font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-900"
+                    onClick={() => {
+                      setOverrideVenueName(match.venueName || '');
+                      setOverrideCity(match.city || '');
+                      setOverrideState(match.state || '');
+                      if (match.latitude != null) {
+                        setOverrideLatitude(String(match.latitude));
+                      }
+                      if (match.longitude != null) {
+                        setOverrideLongitude(String(match.longitude));
+                      }
+                      if (match.date) {
+                        setOverrideDate(match.date);
+                        setShowLookupDate(match.date);
+                        setActiveDate(match.date);
+                        setIsMatchSectionOpen(true);
+                      }
+                      setStatusMessage(`Using matched venue: ${match.venueName || 'Unknown venue'} (${match.date || 'unknown date'}).`);
+                    }}
+                  >
+                    Use this match
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+
+        <datalist id="venue-autocomplete-options">
+          {autocompleteSuggestions.venues.map((entry) => (
+            <option
+              key={`venue-option-${entry.venueName}-${entry.city}-${entry.state}`}
+              value={entry.venueName}
+              label={`${entry.city}, ${entry.state}${entry.count ? ` (${entry.count})` : ''}`}
+            />
+          ))}
+        </datalist>
+        <datalist id="city-autocomplete-options">
+          {autocompleteSuggestions.cities.map((entry) => (
+            <option
+              key={`city-option-${entry.city}-${entry.state}`}
+              value={entry.city}
+              label={`${entry.state}${entry.count ? ` (${entry.count})` : ''}`}
+            />
+          ))}
+        </datalist>
+        <datalist id="state-autocomplete-options">
+          {autocompleteSuggestions.states.map((entry) => (
+            <option
+              key={`state-option-${entry.state}`}
+              value={entry.state}
+              label={entry.count ? `(${entry.count})` : ''}
+            />
+          ))}
+        </datalist>
+      </div>
+    </AccordionSection>
     </div>
   );
 }

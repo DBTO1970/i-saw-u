@@ -971,21 +971,11 @@ export default function ImageExifUploader({
 
       {previewUrl && (
         <div className="overflow-hidden rounded-3xl border border-slate-800 bg-slate-900/70 shadow-xl shadow-slate-950/30">
-          <div className="flex flex-wrap items-center justify-between border-b border-slate-800 p-4 gap-2">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 p-4">
             <div>
               <p className="text-sm font-medium text-slate-300">Preview</p>
               <p className="text-xs text-slate-500">{selectedFileName}</p>
             </div>
-            <button
-              onClick={handleSaveToLibrary}
-              disabled={isSaving}
-              className="flex items-center space-x-2 rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-3.5 py-2 text-xs font-semibold text-cyan-300 transition-all hover:bg-cyan-500/20 hover:border-cyan-400 disabled:opacity-50"
-            >
-              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
-              </svg>
-              <span>{isSaving ? 'Optimizing & Saving...' : 'Save WebP to Library'}</span>
-            </button>
           </div>
 
           {saveMessage && (
@@ -1004,9 +994,21 @@ export default function ImageExifUploader({
                 className="h-auto w-full rounded-xl object-contain" 
               />
             </div>
-            <div className="mt-4 grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-3 sm:mt-6 sm:gap-4 sm:p-4 sm:grid-cols-2 lg:grid-cols-4">
-              {infoRows.map((row) => (
-                <div key={row.label} className="rounded-2xl bg-slate-900/80 p-3 sm:p-4">
+           <div className="mt-4 flex justify-center">
+             <button
+               onClick={handleSaveToLibrary}
+               disabled={isSaving}
+               className="flex w-full items-center justify-center space-x-2 rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-4 py-2.5 text-xs font-semibold text-cyan-300 transition-all hover:border-cyan-400 hover:bg-cyan-500/20 disabled:opacity-50 sm:w-auto"
+             >
+               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
+               </svg>
+               <span>{isSaving ? 'Optimizing & Saving...' : 'Save WebP to Library'}</span>
+             </button>
+           </div>
+           <div className="mt-4 grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-3 sm:mt-6 sm:gap-4 sm:p-4 sm:grid-cols-2 lg:grid-cols-4">
+             {infoRows.map((row) => (
+               <div key={row.label} className="rounded-2xl bg-slate-900/80 p-3 sm:p-4">
                   <p className="text-xs uppercase tracking-[0.24em] text-slate-500">{row.label}</p>
                   <p className="mt-2 text-sm font-medium text-white">{row.value}</p>
                 </div>
