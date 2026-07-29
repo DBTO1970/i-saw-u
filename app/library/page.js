@@ -22,6 +22,27 @@ function getSavedShowMetadata(photo) {
   return showMetadata;
 }
 
+function groupShowsByYear(shows) {
+  const grouped = new Map();
+
+  (shows || []).forEach((show) => {
+    const year = String(show?.show_date || '').slice(0, 4);
+    if (!year) {
+      return;
+    }
+
+    if (!grouped.has(year)) {
+      grouped.set(year, []);
+    }
+
+    grouped.get(year).push(show);
+  });
+
+  return Array.from(grouped.entries())
+    .map(([year, yearShows]) => [year, yearShows.sort((left, right) => String(right.show_date).localeCompare(String(left.show_date)))])
+    .sort(([leftYear], [rightYear]) => Number(rightYear) - Number(leftYear));
+}
+
 export default async function LibraryPage() {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -32,6 +53,8 @@ export default async function LibraryPage() {
 
   const { photos, error: photosError } = await getUserLibraryPhotos();
   const { shows, error: showsError } = await getUserSavedShows();
+  const groupedShows = groupShowsByYear(shows);
+  const defaultOpenYear = groupedShows[0]?.[0] || null;
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.16),_transparent_60%)] px-3 py-4 sm:px-4 sm:py-8">
@@ -144,51 +167,70 @@ export default async function LibraryPage() {
               No bookmarked shows yet. Click "Bookmark Show" when viewing matching show entries.
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              {shows.map((show) => {
-                const phishNetUrl =
-                  show.show_data?.phishNetUrl ||
-                  (show.show_date
-                    ? `https://phish.net/setlists/?d=${encodeURIComponent(show.show_date)}`
-                    : null);
+            <div className="space-y-4">
+              {groupedShows.map(([year, yearShows]) => (
+                <details
+                  key={year}
+                  open={year === defaultOpenYear}
+                  className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60"
+                >
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-left">
+                    <div>
+                      <p className="text-sm font-semibold text-white">{year}</p>
+                      <p className="text-xs text-slate-400">{yearShows.length} show{yearShows.length === 1 ? '' : 's'}</p>
+                    </div>
+                    <span className="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-slate-300">
+                      {yearShows.length} {yearShows.length === 1 ? 'show' : 'shows'}
+                    </span>
+                  </summary>
+                  <div className="grid grid-cols-1 gap-4 border-t border-slate-800 p-4 sm:grid-cols-2">
+                    {yearShows.map((show) => {
+                      const phishNetUrl =
+                        show.show_data?.phishNetUrl ||
+                        (show.show_date
+                          ? `https://phish.net/setlists/?d=${encodeURIComponent(show.show_date)}`
+                          : null);
 
-                return (
-                  <div key={show.id} className="rounded-2xl border border-slate-800 bg-slate-950/60 transition-all hover:border-cyan-500/40 overflow-hidden">
-                    <Link
-                      href={`/library/show/${show.show_date}`}
-                      className="block p-5"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <span className="text-xs font-bold text-cyan-400">{show.show_date}</span>
-                          <h3 className="mt-0.5 text-lg font-semibold text-white">{show.venue_name || 'Venue Unknown'}</h3>
-                          <p className="text-xs text-slate-400">{show.location || ''}</p>
+                      return (
+                        <div key={show.id} className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70 transition-all hover:border-cyan-500/40">
+                          <Link
+                            href={`/library/show/${show.show_date}`}
+                            className="block p-5"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <span className="text-xs font-bold text-cyan-400">{show.show_date}</span>
+                                <h3 className="mt-0.5 text-lg font-semibold text-white">{show.venue_name || 'Venue Unknown'}</h3>
+                                <p className="text-xs text-slate-400">{show.location || ''}</p>
+                              </div>
+                              <div className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${show.public_photo_count > 0 ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-200' : 'border-slate-700 bg-slate-900 text-slate-400'}`}>
+                                📸 {show.public_photo_count} {show.public_photo_count === 1 ? 'photo' : 'photos'}
+                              </div>
+                            </div>
+                            {show.user_notes && (
+                              <p className="mt-3 rounded-xl bg-slate-900/90 p-3 text-xs italic text-slate-300">
+                                "{show.user_notes}"
+                              </p>
+                            )}
+                          </Link>
+                          {phishNetUrl && (
+                            <div className="border-t border-slate-800 px-5 py-3">
+                              <a
+                                href={phishNetUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-xs font-medium text-cyan-400 underline hover:text-cyan-300"
+                              >
+                                Open on phish.net ↗
+                              </a>
+                            </div>
+                          )}
                         </div>
-                        <span className="shrink-0 rounded-lg border border-slate-700 px-2.5 py-1 text-[11px] font-semibold text-slate-300">
-                          View show →
-                        </span>
-                      </div>
-                      {show.user_notes && (
-                        <p className="mt-3 rounded-xl bg-slate-900/90 p-3 text-xs italic text-slate-300">
-                          "{show.user_notes}"
-                        </p>
-                      )}
-                    </Link>
-                    {phishNetUrl && (
-                      <div className="border-t border-slate-800 px-5 py-3">
-                        <a
-                          href={phishNetUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="text-xs font-medium text-cyan-400 underline hover:text-cyan-300"
-                        >
-                          Open on phish.net ↗
-                        </a>
-                      </div>
-                    )}
+                      );
+                    })}
                   </div>
-                );
-              })}
+                </details>
+              ))}
             </div>
           )}
         </section>

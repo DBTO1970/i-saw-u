@@ -9,6 +9,7 @@ import {
   getUserPhotosForShow,
 } from '../../../actions/user-library';
 import FanGalleryGrid from '../../../../components/FanGalleryGrid';
+import ShowSetlistPhotos from '../../../../components/ShowSetlistPhotos';
 
 function isValidDate(d) {
   return /^\d{4}-\d{2}-\d{2}$/.test(d);
@@ -83,6 +84,8 @@ export default async function ShowDetailPage({ params }) {
     }
   }
 
+  const allShowPhotos = [...(photos || []), ...(publicGalleryResult.photos || [])];
+
   return (
     <div className="min-h-screen bg-slate-950 text-white">
       <div className="sticky top-0 z-10 border-b border-slate-800 bg-slate-950/95 backdrop-blur">
@@ -130,26 +133,7 @@ export default async function ShowDetailPage({ params }) {
         {setGroups.length > 0 ? (
           <section>
             <h2 className="mb-4 text-lg font-bold text-white">Setlist</h2>
-            <div className="space-y-5">
-              {setGroups.map((group) => (
-                <div key={group.label} className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
-                  <h3 className="mb-3 text-xs font-bold uppercase tracking-widest text-cyan-400">
-                    {group.label}
-                  </h3>
-                  <ol className="space-y-1">
-                    {group.songs.map((song, i) => (
-                      <li key={i} className="flex items-start gap-2">
-                        <span className="mt-0.5 w-5 shrink-0 text-right text-xs text-slate-500">{i + 1}.</span>
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                          <span className="text-sm text-white">{song.label}</span>
-                          {song.notes ? <span className="text-xs italic text-slate-400">{song.notes}</span> : null}
-                        </div>
-                      </li>
-                    ))}
-                  </ol>
-                </div>
-              ))}
-            </div>
+            <ShowSetlistPhotos setGroups={setGroups} photos={allShowPhotos} currentUserId={user.id} />
           </section>
         ) : showData ? (
           <div className="rounded-xl border border-dashed border-slate-800 p-6 text-center text-sm text-slate-400">

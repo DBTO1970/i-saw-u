@@ -117,6 +117,15 @@ export default async function HomePage({ searchParams }) {
               <p className="text-xs text-slate-400 sm:text-sm">
                 Sign in with Google or GitHub to save uploaded WebP photos and matched show details directly to your personal library!
               </p>
+              <p className="text-xs text-slate-400 sm:text-sm">
+                Have questions, feedback, or inquiries? Reach out at{' '}
+                <a
+                  href="mailto:donbartojunior@gmail.com"
+                  className="text-cyan-400 underline decoration-cyan-500/30 underline-offset-4 transition-colors hover:text-cyan-300"
+                >
+                  donbartojunior@gmail.com
+                </a>.
+              </p>
             </div>
           </details>
         </div>

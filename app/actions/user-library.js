@@ -24,12 +24,71 @@ function applyShowMetadata(rawExifValue, matchedShowDate, showStartTime) {
   return nextRawExif;
 }
 
-function visibilitySchemaMissingMessage(error) {
+function normalizePhotoVisibility(photo) {
+  if (!photo) {
+    return false;
+  }
+
+  if (typeof photo.is_public === 'boolean') {
+    return photo.is_public;
+  }
+
+  const rawExifValue = toObjectOrEmpty(photo.raw_exif);
+  const visibilityCandidates = [
+    rawExifValue.is_public,
+    rawExifValue.isPublic,
+    rawExifValue.visibility,
+  ];
+
+  for (const candidate of visibilityCandidates) {
+    if (typeof candidate === 'boolean') {
+      return candidate;
+    }
+
+    if (typeof candidate === 'string') {
+      const normalizedValue = candidate.toLowerCase();
+      if (normalizedValue === 'public' || normalizedValue === 'true') {
+        return true;
+      }
+      if (normalizedValue === 'private' || normalizedValue === 'false') {
+        return false;
+      }
+    }
+  }
+
+  return false;
+}
+
+function withNormalizedVisibility(photo) {
+  if (!photo) {
+    return photo;
+  }
+
+  return {
+    ...photo,
+    is_public: normalizePhotoVisibility(photo),
+  };
+}
+
+function buildVisibilityAwareRawExif(rawExifValue, isPublic) {
+  const nextRawExif = { ...toObjectOrEmpty(rawExifValue) };
+  nextRawExif.is_public = !!isPublic;
+  nextRawExif.isPublic = !!isPublic;
+  nextRawExif.visibility = isPublic ? 'public' : 'private';
+  return nextRawExif;
+}
+
+function isVisibilitySchemaError(error) {
   const message = error?.message || '';
-  if (
+  return (
     message.includes("Could not find the 'is_public' column") ||
-    message.includes('schema cache')
-  ) {
+    message.includes('schema cache') ||
+    (message.includes('column') && message.includes('is_public'))
+  );
+}
+
+function visibilitySchemaMissingMessage(error) {
+  if (isVisibilitySchemaError(error)) {
     return 'Your Supabase database is missing the photos.is_public column. Apply migration 03_add_public_photo_visibility.sql, then refresh the schema cache.';
   }
   return null;
@@ -84,33 +143,53 @@ export async function savePhotoToLibrary(formData) {
       return { success: false, error: uploadError.message };
     }
 
+    const baseInsertPayload = {
+      id: photoId,
+      user_id: user.id,
+      storage_path: storagePath,
+      file_name: fileName,
+      file_size: buffer.length,
+      mime_type: 'image/webp',
+      date_taken: dateTaken && dateTaken !== 'Not available' ? dateTaken : null,
+      time_taken: timeTaken && timeTaken !== 'Not available' ? timeTaken : null,
+      gps_latitude: gpsLatitudeRaw ? parseFloat(gpsLatitudeRaw) : null,
+      gps_longitude: gpsLongitudeRaw ? parseFloat(gpsLongitudeRaw) : null,
+      matched_show_date: matchedShowDate,
+      show_start_time: showStartTime,
+      raw_exif: buildVisibilityAwareRawExif(parsedRawExif, false),
+      is_public: false,
+    };
+
     // 2. Insert record into 'photos' database table
     const { data: photoRecord, error: dbError } = await supabase
       .from('photos')
-      .insert({
-        id: photoId,
-        user_id: user.id,
-        storage_path: storagePath,
-        file_name: fileName,
-        file_size: buffer.length,
-        mime_type: 'image/webp',
-        date_taken: dateTaken && dateTaken !== 'Not available' ? dateTaken : null,
-        time_taken: timeTaken && timeTaken !== 'Not available' ? timeTaken : null,
-        gps_latitude: gpsLatitudeRaw ? parseFloat(gpsLatitudeRaw) : null,
-        gps_longitude: gpsLongitudeRaw ? parseFloat(gpsLongitudeRaw) : null,
-        matched_show_date: matchedShowDate,
-        show_start_time: showStartTime,
-        raw_exif: parsedRawExif,
-      })
+      .insert(baseInsertPayload)
       .select()
       .single();
+
+    if (dbError && isVisibilitySchemaError(dbError)) {
+      const fallbackPayload = { ...baseInsertPayload };
+      delete fallbackPayload.is_public;
+      const { data: fallbackPhotoRecord, error: fallbackDbError } = await supabase
+        .from('photos')
+        .insert(fallbackPayload)
+        .select()
+        .single();
+
+      if (fallbackDbError) {
+        console.error('DB Insert Error:', fallbackDbError);
+        return { success: false, error: fallbackDbError.message };
+      }
+
+      return { success: true, photo: withNormalizedVisibility(fallbackPhotoRecord) };
+    }
 
     if (dbError) {
       console.error('DB Insert Error:', dbError);
       return { success: false, error: dbError.message };
     }
 
-    return { success: true, photo: photoRecord };
+    return { success: true, photo: withNormalizedVisibility(photoRecord) };
   } catch (error) {
     console.error('savePhotoToLibrary Error:', error);
     return { success: false, error: error.message || 'Failed to save photo.' };
@@ -176,9 +255,11 @@ export async function getUserLibraryPhotos() {
       return { photos: [], error: error.message };
     }
 
+    const normalizedPhotos = (photos || []).map(withNormalizedVisibility);
+
     // Generate signed URLs for private photos
     const photosWithUrls = await Promise.all(
-      (photos || []).map(async (photo) => {
+      normalizedPhotos.map(async (photo) => {
         const { data: signedData } = await supabase.storage
           .from('user-photos')
           .createSignedUrl(photo.storage_path, 60 * 60); // 1 hour valid link
@@ -224,7 +305,7 @@ export async function getUserLibraryPhotoById(photoId) {
 
     return {
       photo: {
-        ...photo,
+        ...withNormalizedVisibility(photo),
         url: signedData?.signedUrl || null,
       },
       error: null,
@@ -381,7 +462,27 @@ export async function getUserSavedShows() {
       return { shows: [], error: error.message };
     }
 
-    return { shows: shows || [], error: null };
+    let publicPhotoCounts = new Map();
+    const { data: publicPhotoRows, error: publicPhotoError } = await supabase
+      .from('photos')
+      .select('matched_show_date, user_id, raw_exif');
+
+    if (!publicPhotoError) {
+      (publicPhotoRows || []).forEach((row) => {
+        const normalizedRow = withNormalizedVisibility(row);
+        if (!normalizedRow.matched_show_date || normalizedRow.user_id === user.id || normalizedRow.is_public !== true) {
+          return;
+        }
+        publicPhotoCounts.set(normalizedRow.matched_show_date, (publicPhotoCounts.get(normalizedRow.matched_show_date) || 0) + 1);
+      });
+    }
+
+    const showsWithCounts = (shows || []).map((show) => ({
+      ...show,
+      public_photo_count: publicPhotoCounts.get(show.show_date) || 0,
+    }));
+
+    return { shows: showsWithCounts, error: null };
   } catch (error) {
     return { shows: [], error: error.message };
   }
@@ -440,8 +541,10 @@ export async function getUserPhotosForShow(showDate) {
       return { photos: [], error: error.message };
     }
 
+    const normalizedPhotos = (photos || []).map(withNormalizedVisibility);
+
     const photosWithUrls = await Promise.all(
-      (photos || []).map(async (photo) => {
+      normalizedPhotos.map(async (photo) => {
         const { data: signedData } = await supabase.storage
           .from('user-photos')
           .createSignedUrl(photo.storage_path, 60 * 60);
@@ -566,11 +669,39 @@ export async function togglePhotoVisibility(photoId, isPublic) {
       .select('id, is_public')
       .single();
 
+    if (error && isVisibilitySchemaError(error)) {
+      const { data: existingPhoto, error: existingError } = await supabase
+        .from('photos')
+        .select('raw_exif')
+        .eq('id', photoId)
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (existingError) {
+        return { success: false, error: existingError.message };
+      }
+
+      const nextRawExif = buildVisibilityAwareRawExif(existingPhoto?.raw_exif, !!isPublic);
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('photos')
+        .update({ raw_exif: nextRawExif })
+        .eq('id', photoId)
+        .eq('user_id', user.id)
+        .select('id, raw_exif')
+        .single();
+
+      if (fallbackError) {
+        return { success: false, error: visibilitySchemaMissingMessage(fallbackError) || fallbackError.message };
+      }
+
+      return { success: true, photo: withNormalizedVisibility({ ...fallbackData, is_public: !!isPublic }) };
+    }
+
     if (error) {
       return { success: false, error: visibilitySchemaMissingMessage(error) || error.message };
     }
 
-    return { success: true, photo: data };
+    return { success: true, photo: withNormalizedVisibility(data) };
   } catch (error) {
     return { success: false, error: error.message };
   }
@@ -607,19 +738,20 @@ export async function getPublicPhotosForShow(showDate) {
       .from('photos')
       .select('*')
       .eq('matched_show_date', showDate)
-      .eq('is_public', true)
       .order('created_at', { ascending: false });
 
     if (error) {
       return { photos: [], error: visibilitySchemaMissingMessage(error) || error.message };
     }
 
-    const userIds = [...new Set((photos || []).map((photo) => photo.user_id).filter(Boolean))];
+    const normalizedPhotos = (photos || []).map(withNormalizedVisibility);
+    const publicPhotos = normalizedPhotos.filter((photo) => photo.is_public === true);
+    const userIds = [...new Set(publicPhotos.map((photo) => photo.user_id).filter(Boolean))];
     if (userIds.length === 0) {
       return { photos: [], error: null };
     }
 
-    const [{ data: profiles, error: profileError }, { data: showRows, error: showRowsError }, { data: publicRows, error: publicRowsError }] = await Promise.all([
+    const [{ data: profiles, error: profileError }, { data: showRows, error: showRowsError }, { data: userPhotoRows, error: userPhotoRowsError }] = await Promise.all([
       supabase
         .from('profiles')
         .select('id, username, avatar_url, display_name')
@@ -630,37 +762,30 @@ export async function getPublicPhotosForShow(showDate) {
         .in('user_id', userIds),
       supabase
         .from('photos')
-        .select('user_id')
-        .eq('is_public', true)
+        .select('user_id, raw_exif')
         .in('user_id', userIds),
     ]);
 
-    if (profileError) {
-      return { photos: [], error: profileError.message };
-    }
+    const safeProfiles = profileError ? [] : (profiles || []);
+    const safeShowRows = showRowsError ? [] : (showRows || []);
+    const safeUserPhotoRows = userPhotoRowsError ? [] : (userPhotoRows || []);
 
-    if (showRowsError) {
-      return { photos: [], error: showRowsError.message };
-    }
-
-    if (publicRowsError) {
-      return { photos: [], error: publicRowsError.message };
-    }
-
-    const profileById = new Map((profiles || []).map((profile) => [profile.id, profile]));
+    const profileById = new Map(safeProfiles.map((profile) => [profile.id, profile]));
     const showsAttendedByUser = new Map();
     const publicPhotosByUser = new Map();
 
-    (showRows || []).forEach((row) => {
+    safeShowRows.forEach((row) => {
       showsAttendedByUser.set(row.user_id, (showsAttendedByUser.get(row.user_id) || 0) + 1);
     });
 
-    (publicRows || []).forEach((row) => {
-      publicPhotosByUser.set(row.user_id, (publicPhotosByUser.get(row.user_id) || 0) + 1);
+    safeUserPhotoRows.forEach((row) => {
+      if (normalizePhotoVisibility(row) === true) {
+        publicPhotosByUser.set(row.user_id, (publicPhotosByUser.get(row.user_id) || 0) + 1);
+      }
     });
 
     const photosWithUrls = await Promise.all(
-      (photos || []).map(async (photo) => {
+      publicPhotos.map(async (photo) => {
         const { data: signedData } = await supabase.storage
           .from('user-photos')
           .createSignedUrl(photo.storage_path, 60 * 60);

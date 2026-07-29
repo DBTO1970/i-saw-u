@@ -1,10 +1,13 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 
 export default function FanGalleryGrid({ photos = [], currentUserId = null }) {
   const [selectedPhoto, setSelectedPhoto] = useState(null);
-  const visiblePhotos = photos.filter((photo) => !currentUserId || photo.user_id !== currentUserId);
+  const visiblePhotos = useMemo(
+    () => photos.filter((photo) => !currentUserId || photo.user_id !== currentUserId),
+    [photos, currentUserId]
+  );
 
   return (
     <>
@@ -30,7 +33,6 @@ export default function FanGalleryGrid({ photos = [], currentUserId = null }) {
                   Photo unavailable
                 </div>
               )}
-
             </button>
           );
         })}
@@ -41,8 +43,9 @@ export default function FanGalleryGrid({ photos = [], currentUserId = null }) {
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
           onClick={() => setSelectedPhoto(null)}
         >
-          <div className="w-full max-w-6xl rounded-2xl border border-slate-700 bg-slate-950/95 shadow-2xl shadow-black/60">
+          <div className="w-full max-w-5xl rounded-2xl border border-slate-700 bg-slate-950/95 shadow-2xl shadow-black/60">
             <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
+              <p className="text-sm font-semibold text-white">Fan gallery</p>
               <button
                 type="button"
                 onClick={() => setSelectedPhoto(null)}
@@ -53,11 +56,17 @@ export default function FanGalleryGrid({ photos = [], currentUserId = null }) {
             </div>
 
             <div className="p-4" onClick={(event) => event.stopPropagation()}>
-              <img
-                src={selectedPhoto.url || ''}
-                alt={selectedPhoto.file_name || 'Fan photo'}
-                className="max-h-[80vh] w-full object-contain"
-              />
+              {selectedPhoto.url ? (
+                <img
+                  src={selectedPhoto.url || ''}
+                  alt={selectedPhoto.file_name || 'Fan photo'}
+                  className="max-h-[80vh] w-full object-contain"
+                />
+              ) : (
+                <div className="flex h-[60vh] w-full items-center justify-center rounded-2xl border border-dashed border-slate-700 bg-slate-900/80 text-sm text-slate-500">
+                  Photo unavailable
+                </div>
+              )}
             </div>
           </div>
         </div>
