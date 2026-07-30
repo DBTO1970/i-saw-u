@@ -89,6 +89,8 @@ export default async function LibraryPage() {
                 const showDate = savedShowMetadata?.matchedShowDate || photo.matched_show_date || null;
                 const venueName = savedShowMetadata?.venueName || savedShowMetadata?.showData?.venueName || 'Unknown venue';
                 const currentSong = savedShowMetadata?.currentSong || null;
+                const calibrationSource = savedShowMetadata?.timingCalibration?.source || savedShowMetadata?.calibrationSource || null;
+                const calibrationConfidence = savedShowMetadata?.timingCalibration?.confidence || savedShowMetadata?.calibrationConfidence || null;
 
                 return (
                   <div
@@ -117,6 +119,11 @@ export default async function LibraryPage() {
                       </p>
                       <p className="text-slate-400 truncate">Venue: {venueName}</p>
                       <p className="text-slate-400 truncate">Current song: {currentSong || 'Unknown'}</p>
+                      {(calibrationSource || calibrationConfidence) ? (
+                        <p className="text-[11px] text-amber-300 truncate">
+                          Timing calibration: {calibrationSource || 'unknown source'}{calibrationConfidence ? ` (${calibrationConfidence} confidence)` : ''}
+                        </p>
+                      ) : null}
                       <div className="flex items-center space-x-2 text-slate-400">
                         <span>Date Taken: {photo.date_taken || 'Unknown'}</span>
                         {photo.time_taken && <span>• {photo.time_taken}</span>}

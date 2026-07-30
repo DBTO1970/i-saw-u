@@ -620,6 +620,7 @@ export default function ImageExifUploader({
   showData = null,
   currentSongLabel = '',
   timeContextLabel = '',
+  calibrationMetadata = null,
 }) {
   const [previewUrl, setPreviewUrl] = useState('');
   const [selectedFileName, setSelectedFileName] = useState('');
@@ -677,6 +678,17 @@ export default function ImageExifUploader({
             state: showData?.state || null,
             currentSong: currentSongLabel || null,
             timeContextLabel: timeContextLabel || null,
+            calibrationSource: calibrationMetadata?.source || null,
+            calibrationConfidence: calibrationMetadata?.confidence || null,
+            calibrationMatchedSong: calibrationMetadata?.matchedSongLabel || null,
+            timingCalibration: calibrationMetadata
+              ? {
+                  source: calibrationMetadata.source || null,
+                  confidence: calibrationMetadata.confidence || null,
+                  matchedSongLabel: calibrationMetadata.matchedSongLabel || null,
+                  showStartTime: calibrationMetadata.showStartTime || showStartTime || null,
+                }
+              : null,
             showData: showData || null,
           },
         })

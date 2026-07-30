@@ -272,6 +272,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
   const [showStartTime, setShowStartTime] = useState('19:30');
   const [currentSongLabel, setCurrentSongLabel] = useState('');
   const [timeContextLabel, setTimeContextLabel] = useState('');
+  const [calibrationMetadata, setCalibrationMetadata] = useState(null);
   const [isMatchSectionOpen, setIsMatchSectionOpen] = useState(true);
   const [isSupplementalSectionOpen, setIsSupplementalSectionOpen] = useState(false);
   const supplementalSectionRef = useRef(null);
@@ -638,6 +639,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
     setShowStartTime('19:30');
     setCurrentSongLabel('');
     setTimeContextLabel('');
+    setCalibrationMetadata(null);
     setIsMatchSectionOpen(true);
     setIsSupplementalSectionOpen(false);
   };
@@ -662,6 +664,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
       showData={effectiveShow}
       currentSongLabel={currentSongLabel}
       timeContextLabel={timeContextLabel}
+      calibrationMetadata={calibrationMetadata}
     />
 
     {initialSharedPhoto ? (
@@ -815,11 +818,13 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
             showStartTime={showStartTime}
             onShowStartTimeChange={(nextTime) => {
               setShowStartTime(nextTime);
-              openSupplementalSection();
             }}
             onTimeContextChange={(context) => {
               setCurrentSongLabel(context?.songLabel || '');
               setTimeContextLabel(context?.label || '');
+            }}
+            onCalibrationChange={(nextCalibrationMetadata) => {
+              setCalibrationMetadata(nextCalibrationMetadata || null);
             }}
           />
         ) : null}

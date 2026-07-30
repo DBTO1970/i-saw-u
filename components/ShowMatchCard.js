@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getPhishInShowLinks } from '../app/actions/shows';
 import { saveShowToLibrary, removeShowFromLibraryByDate } from '../app/actions/user-library';
+import { buildSetlistSongTimeline, calibrateShowStartTime } from '../lib/show-start-time-calibration';
 
 function toRadians(value) {
   return (value * Math.PI) / 180;
@@ -486,8 +487,12 @@ function parseTimeStringToMinutes(value) {
   return hours * 60 + minutes;
 }
 
-export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19:30', onShowStartTimeChange, onTimeContextChange, initialIsBookmarked = false }) {
+export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19:30', onShowStartTimeChange, onTimeContextChange, onCalibrationChange, initialIsBookmarked = false }) {
   const [startMinutes, setStartMinutes] = useState(() => parseTimeStringToMinutes(showStartTime));
+  const [snapSongIndex, setSnapSongIndex] = useState('');
+  const [snapMessage, setSnapMessage] = useState('');
+  const [calibrationSource, setCalibrationSource] = useState('manual-slider');
+  const [calibrationSongLabel, setCalibrationSongLabel] = useState('');
 
   useEffect(() => {
     setStartMinutes(parseTimeStringToMinutes(showStartTime));
@@ -518,6 +523,12 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
   }, [photoMetadata, show]);
 
   const setlistEntries = useMemo(() => formatSetlist(show?.setlist), [show]);
+  const photoTimestamp = useMemo(() => parsePhotoDateTime(photoMetadata), [photoMetadata]);
+  const setlistSongTimeline = useMemo(() => buildSetlistSongTimeline(setlistEntries), [setlistEntries]);
+  const defaultCalibration = useMemo(
+    () => calibrateShowStartTime(photoTimestamp, setlistEntries),
+    [photoTimestamp, setlistEntries]
+  );
   const dateSource = photoMetadata?.dateSource || 'unknown';
   const timeSource = photoMetadata?.timeSource || dateSource || 'unknown';
   const gpsSource = photoMetadata?.gpsSource || photoMetadata?.locationSource || 'unknown';
@@ -530,11 +541,39 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
     [photoMetadata, show, setlistEntries, startTime24h]
   );
 
+  useEffect(() => {
+    if (!defaultCalibration || showStartTime !== '19:30') {
+      return;
+    }
+
+    setStartMinutes(defaultCalibration.showStartMinutes);
+    setCalibrationSource(defaultCalibration.calibrationSource || 'typical-delay');
+    setCalibrationSongLabel(defaultCalibration.matchedSongLabel || '');
+    setSnapMessage(`Calibrated from EXIF using typical timing near ${defaultCalibration.matchedSongLabel}.`);
+  }, [defaultCalibration, showStartTime]);
+
   const onTimeContextChangeRef = useRef(onTimeContextChange);
   onTimeContextChangeRef.current = onTimeContextChange;
   useEffect(() => {
     onTimeContextChangeRef.current?.(timeContext || null);
   }, [timeContext]);
+
+  const onCalibrationChangeRef = useRef(onCalibrationChange);
+  onCalibrationChangeRef.current = onCalibrationChange;
+  useEffect(() => {
+    const confidence = calibrationSource === 'snap-to-song'
+      ? 'high'
+      : calibrationSource === 'typical-delay'
+        ? 'medium'
+        : 'low';
+
+    onCalibrationChangeRef.current?.({
+      source: calibrationSource,
+      confidence,
+      matchedSongLabel: calibrationSongLabel || timeContext?.songLabel || null,
+      showStartTime: startTime24h,
+    });
+  }, [calibrationSource, calibrationSongLabel, timeContext?.songLabel, startTime24h]);
 
   const [phishInLinks, setPhishInLinks] = useState({
     showUrl: null,
@@ -640,6 +679,45 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
     };
   }, [show?.date, timeContext?.songLabel]);
 
+  const applyAutoCalibration = () => {
+    if (!defaultCalibration) {
+      return;
+    }
+
+    setStartMinutes(defaultCalibration.showStartMinutes);
+    setCalibrationSource(defaultCalibration.calibrationSource || 'typical-delay');
+    setCalibrationSongLabel(defaultCalibration.matchedSongLabel || '');
+    setSnapMessage(`Calibrated from EXIF using typical timing near ${defaultCalibration.matchedSongLabel}.`);
+  };
+
+  const handleSnapToSong = (value) => {
+    setSnapSongIndex(value);
+    setSnapMessage('');
+
+    if (!photoTimestamp || value === '') {
+      return;
+    }
+
+    const nextSongIndex = Number(value);
+    if (Number.isNaN(nextSongIndex)) {
+      return;
+    }
+
+    const snapResult = calibrateShowStartTime(photoTimestamp, setlistEntries, {
+      targetSongIndex: nextSongIndex,
+      roundToMinutes: 1,
+    });
+
+    if (!snapResult) {
+      return;
+    }
+
+    setStartMinutes(snapResult.showStartMinutes);
+    setCalibrationSource('snap-to-song');
+    setCalibrationSongLabel(snapResult.matchedSongLabel || '');
+    setSnapMessage(`Snapped to ${snapResult.matchedSongLabel}.`);
+  };
+
   return (
     <div className="rounded-3xl border border-slate-800 bg-slate-900/70 p-4 shadow-xl shadow-slate-950/30 sm:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
@@ -705,6 +783,12 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
               This is based on an estimated start time of: <span className="font-semibold text-cyan-300">{startTimeFormatted}</span>. Use slider to adjust.
             </p>
 
+            {defaultCalibration ? (
+              <p className="mt-2 text-xs text-slate-400">
+                Auto estimate from EXIF suggests <span className="font-semibold text-cyan-300">{defaultCalibration.showStartTime}</span> around {defaultCalibration.matchedSongLabel}.
+              </p>
+            ) : null}
+
             <div className="mt-3 flex items-center gap-3">
               <span className="text-xs text-slate-500 font-mono">5:00 PM</span>
               <input
@@ -713,11 +797,44 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
                 max={22 * 60} // 10:00 PM
                 step={5}      // 5-minute increments
                 value={startMinutes}
-                onChange={(e) => setStartMinutes(Number(e.target.value))}
+                onChange={(e) => {
+                  setStartMinutes(Number(e.target.value));
+                  setCalibrationSource('manual-slider');
+                }}
                 className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-slate-800 accent-cyan-400"
               />
               <span className="text-xs text-slate-500 font-mono">10:00 PM</span>
             </div>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto]">
+              <label className="text-xs text-slate-300">
+                Snap photo to song
+                <select
+                  value={snapSongIndex}
+                  onChange={(event) => handleSnapToSong(event.target.value)}
+                  disabled={!photoTimestamp || setlistSongTimeline.length === 0}
+                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <option value="">Choose a song…</option>
+                  {setlistSongTimeline.map((song) => (
+                    <option key={`snap-song-${song.index}-${song.label}`} value={song.index}>
+                      {song.index + 1}. {song.label} ({song.setLabel})
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <button
+                type="button"
+                onClick={applyAutoCalibration}
+                disabled={!defaultCalibration}
+                className="self-end rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Auto-calibrate
+              </button>
+            </div>
+
+            {snapMessage ? <p className="mt-2 text-xs text-cyan-300">{snapMessage}</p> : null}
 
             {/* Visual Indicator of Photo Phase */}
             <div className="mt-4 flex items-center justify-between border-t border-slate-800/80 pt-3 text-xs">

@@ -34,12 +34,14 @@ export default function manifest(): MetadataRoute.Manifest {
       action: '/api/share-target',
       method: 'post',
       enctype: 'multipart/form-data',
-      files: [
-        {
-          name: 'files',
-          accept: ['image/jpeg', 'image/heic', 'image/heif', 'image/png', 'image/*'],
-        },
-      ],
+      params: {
+        files: [
+          {
+            name: 'files',
+            accept: ['image/jpeg', 'image/heic', 'image/heif', 'image/png', 'image/*'],
+          },
+        ],
+      },
     },
   };
 }
