@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 
 function normalizeSongLabel(value) {
   return String(value || '')
@@ -95,34 +95,9 @@ function formatPhotoTimestamp(photo) {
   return 'Timestamp unavailable';
 }
 
-function getOwnerLabel(photo, currentUserId) {
-  if (photo?.user_id === currentUserId || photo?.isMine) {
-    return 'You';
-  }
-
-  return photo?.creator?.display_name || photo?.creator?.username || 'Fan';
-}
-
-function getOwnerInitials(name) {
-  const trimmedName = String(name || '').trim();
-  if (!trimmedName) {
-    return 'Y';
-  }
-
-  const parts = trimmedName.split(/\s+/).filter(Boolean);
-  if (parts.length === 0) {
-    return 'Y';
-  }
-
-  if (parts.length === 1) {
-    return parts[0].slice(0, 2).toUpperCase();
-  }
-
-  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
-}
-
 export default function ShowSetlistPhotos({ setGroups = [], photos = [], currentUserId = null }) {
-  const [selectedSong, setSelectedSong] = useState(null);
+  const [selectedSongKey, setSelectedSongKey] = useState(null);
+  const [selectedPhoto, setSelectedPhoto] = useState(null);
 
   const songEntries = useMemo(() => {
     return (setGroups || []).flatMap((group, groupIndex) =>
@@ -145,16 +120,102 @@ export default function ShowSetlistPhotos({ setGroups = [], photos = [], current
     });
   }, [songEntries, photos]);
 
-  const activeSongPhotos = useMemo(() => {
-    if (!selectedSong) {
-      return [];
+  useEffect(() => {
+    if (songPhotoMap.length === 0) {
+      setSelectedSongKey(null);
+      return;
     }
 
-    return songPhotoMap.find((song) => song.key === selectedSong.key)?.photos || [];
-  }, [selectedSong, songPhotoMap]);
+    const hasValidSelection = songPhotoMap.some((song) => song.key === selectedSongKey);
+    if (hasValidSelection) {
+      return;
+    }
+
+    const firstSongWithPhotos = songPhotoMap.find((song) => song.count > 0);
+    setSelectedSongKey((firstSongWithPhotos || songPhotoMap[0]).key);
+  }, [songPhotoMap, selectedSongKey]);
+
+  const activeSongEntry = useMemo(() => {
+    if (!selectedSongKey) {
+      return null;
+    }
+    return songPhotoMap.find((song) => song.key === selectedSongKey) || null;
+  }, [selectedSongKey, songPhotoMap]);
+
+  const activeSongPhotos = useMemo(() => {
+    const selectedSongPhotos = activeSongEntry?.photos || [];
+    const myPhotos = (photos || []).filter((photo) => {
+      if (!currentUserId) {
+        return false;
+      }
+      return photo?.user_id === currentUserId || photo?.isMine === true;
+    });
+
+    if (myPhotos.length === 0) {
+      return selectedSongPhotos;
+    }
+
+    const merged = [...selectedSongPhotos];
+    const seen = new Set(selectedSongPhotos.map((photo) => photo.id));
+    myPhotos.forEach((photo) => {
+      if (!seen.has(photo.id)) {
+        merged.push(photo);
+        seen.add(photo.id);
+      }
+    });
+
+    return merged;
+  }, [activeSongEntry, photos, currentUserId]);
 
   return (
     <>
+      <div className="overflow-hidden rounded-2xl border border-cyan-500/25 bg-gradient-to-b from-slate-900/95 via-slate-950/85 to-slate-950/75 shadow-xl shadow-cyan-950/30">
+        <div className="flex items-start justify-between gap-3 border-b border-slate-800 px-4 py-3 md:px-5">
+          <div>
+            <p className="text-xs font-bold uppercase tracking-widest text-cyan-400">Photos</p>
+            <p className="text-sm font-semibold text-white">
+              {activeSongEntry?.label || 'Select a song'}
+            </p>
+            <p className="text-xs text-slate-400">{activeSongEntry?.groupLabel || 'Setlist'}</p>
+          </div>
+          <span className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-1 text-[11px] font-semibold text-cyan-200">
+            {activeSongPhotos.length} {activeSongPhotos.length === 1 ? 'photo' : 'photos'}
+          </span>
+        </div>
+
+        <div className="p-3 md:p-5">
+          {activeSongPhotos.length === 0 ? (
+            <div className="rounded-2xl border border-dashed border-slate-800 p-8 text-center text-sm text-slate-400">
+              No photos for this song yet.
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {activeSongPhotos.map((photo) => {
+                return (
+                  <button
+                    key={photo.id}
+                    type="button"
+                    onClick={() => setSelectedPhoto(photo)}
+                    className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70 text-left transition hover:border-cyan-500/40"
+                  >
+                    {photo.url ? (
+                      <img src={photo.url} alt={photo.file_name || 'Fan photo'} className="h-auto w-full object-contain" />
+                    ) : (
+                      <div className="flex aspect-[4/3] w-full items-center justify-center bg-slate-800 text-sm text-slate-500">
+                        Photo unavailable
+                      </div>
+                    )}
+                    <div className="p-3">
+                      <p className="truncate text-[11px] text-slate-400">{formatPhotoTimestamp(photo)}</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
       <div className="space-y-5">
         {songPhotoMap.map((songEntry) => (
           <div key={songEntry.key} className="rounded-xl border border-slate-800 bg-slate-900/60 p-4">
@@ -165,8 +226,10 @@ export default function ShowSetlistPhotos({ setGroups = [], photos = [], current
                 </h3>
                 <button
                   type="button"
-                  onClick={() => setSelectedSong(songEntry)}
-                  className="text-left text-sm font-semibold text-white transition hover:text-cyan-300"
+                  onClick={() => setSelectedSongKey(songEntry.key)}
+                  className={`text-left text-sm font-semibold transition hover:text-cyan-300 ${
+                    selectedSongKey === songEntry.key ? 'text-cyan-300' : 'text-white'
+                  }`}
                 >
                   {songEntry.label}
                 </button>
@@ -174,7 +237,7 @@ export default function ShowSetlistPhotos({ setGroups = [], photos = [], current
               {songEntry.count > 0 ? (
                 <button
                   type="button"
-                  onClick={() => setSelectedSong(songEntry)}
+                  onClick={() => setSelectedSongKey(songEntry.key)}
                   className="rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2.5 py-1 text-[11px] font-semibold text-cyan-200 transition hover:border-cyan-400 hover:bg-cyan-500/20"
                 >
                   📷 {songEntry.count}
@@ -186,17 +249,20 @@ export default function ShowSetlistPhotos({ setGroups = [], photos = [], current
         ))}
       </div>
 
-      {selectedSong ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm" onClick={() => setSelectedSong(null)}>
+      {selectedPhoto ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 backdrop-blur-sm"
+          onClick={() => setSelectedPhoto(null)}
+        >
           <div className="w-full max-w-6xl rounded-2xl border border-slate-700 bg-slate-950/95 shadow-2xl shadow-black/60" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
               <div>
-                <p className="text-sm font-semibold text-white">{selectedSong.label}</p>
-                <p className="text-xs text-slate-400">{selectedSong.groupLabel}</p>
+                <p className="text-sm font-semibold text-white">{activeSongEntry?.label || 'Photo preview'}</p>
+                <p className="text-xs text-slate-400">{activeSongEntry?.groupLabel || 'Setlist'}</p>
               </div>
               <button
                 type="button"
-                onClick={() => setSelectedSong(null)}
+                onClick={() => setSelectedPhoto(null)}
                 className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:border-cyan-500/40 hover:text-white"
               >
                 Close
@@ -204,43 +270,15 @@ export default function ShowSetlistPhotos({ setGroups = [], photos = [], current
             </div>
 
             <div className="max-h-[80vh] overflow-y-auto p-4">
-              {activeSongPhotos.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-800 p-8 text-center text-sm text-slate-400">
-                  No photos for this song yet.
-                </div>
+              {selectedPhoto.url ? (
+                <img
+                  src={selectedPhoto.url}
+                  alt={selectedPhoto.file_name || 'Fan photo'}
+                  className="mx-auto h-auto w-full object-contain"
+                />
               ) : (
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                  {activeSongPhotos.map((photo) => {
-                    const ownerName = getOwnerLabel(photo, currentUserId);
-                    const ownerInitials = getOwnerInitials(ownerName);
-
-                    return (
-                      <div key={photo.id} className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70">
-                        {photo.url ? (
-                          <img src={photo.url} alt={photo.file_name || ownerName} className="w-full object-contain" />
-                        ) : (
-                          <div className="flex aspect-[4/3] w-full items-center justify-center bg-slate-800 text-sm text-slate-500">
-                            Photo unavailable
-                          </div>
-                        )}
-                        <div className="space-y-2 p-3">
-                          <div className="flex items-center gap-2">
-                            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-white/10 bg-slate-800 text-[11px] font-semibold text-white">
-                              {photo.creator?.avatar_url ? (
-                                <img src={photo.creator.avatar_url} alt={ownerName} className="h-full w-full rounded-full object-cover" />
-                              ) : (
-                                ownerInitials
-                              )}
-                            </div>
-                            <div className="min-w-0">
-                              <p className="truncate text-sm font-semibold text-white">{ownerName}</p>
-                              <p className="truncate text-[11px] text-slate-400">{formatPhotoTimestamp(photo)}</p>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                <div className="flex aspect-[4/3] w-full items-center justify-center rounded-2xl border border-dashed border-slate-800 bg-slate-900/80 text-sm text-slate-400">
+                  Photo unavailable
                 </div>
               )}
             </div>

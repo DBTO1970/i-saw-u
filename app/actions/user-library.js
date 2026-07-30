@@ -465,7 +465,7 @@ export async function getUserSavedShows() {
     let publicPhotoCounts = new Map();
     const { data: publicPhotoRows, error: publicPhotoError } = await supabase
       .from('photos')
-      .select('matched_show_date, user_id, raw_exif');
+      .select('matched_show_date, user_id, is_public, raw_exif');
 
     if (!publicPhotoError) {
       (publicPhotoRows || []).forEach((row) => {
@@ -762,7 +762,7 @@ export async function getPublicPhotosForShow(showDate) {
         .in('user_id', userIds),
       supabase
         .from('photos')
-        .select('user_id, raw_exif')
+        .select('user_id, is_public, raw_exif')
         .in('user_id', userIds),
     ]);
 

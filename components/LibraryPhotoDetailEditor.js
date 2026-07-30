@@ -133,30 +133,23 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
   };
 
   return (
-    <section className="space-y-4">
-      <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/70">
-        <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
-          <div>
-            <p className="text-sm font-semibold text-white">Photo</p>
-            <p className="text-xs text-slate-500">{initialPhoto.file_name}</p>
-          </div>
-          {/* {initialPhoto.url ? (
-            <button
-              type="button"
-              onClick={() => setIsFullscreenOpen(true)}
-              className="rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-3 py-1.5 text-xs font-semibold text-cyan-200 transition hover:border-cyan-400 hover:bg-cyan-500/20"
-            >
-              Expand full screen
-            </button>
-          ) : null} */}
-        </div>
+    <section className="space-y-4 md:space-y-6">
+      <div className="overflow-hidden rounded-2xl border border-cyan-500/20 bg-gradient-to-b from-slate-900/95 via-slate-950/85 to-slate-950/70 shadow-xl shadow-cyan-950/20 md:rounded-3xl md:border-cyan-400/25 md:shadow-2xl md:shadow-cyan-950/40">
         {initialPhoto.url ? (
-          <div className="p-4">
-            <img src={initialPhoto.url} alt={initialPhoto.file_name} className="mx-auto max-h-[70vh] w-full rounded-xl object-contain" />
+          <div className="p-2 sm:p-4 md:p-6">
+            <img
+              src={initialPhoto.url}
+              alt={initialPhoto.file_name}
+              className="mx-auto h-auto w-full rounded-xl object-contain ring-1 ring-white/10 md:max-h-[82vh] md:rounded-2xl"
+            />
           </div>
         ) : (
           <div className="p-8 text-center text-sm text-slate-500">Photo preview unavailable.</div>
         )}
+        <div className="border-t border-slate-800/90 px-4 py-3 md:px-6 md:py-4">
+          <p className="text-sm font-semibold text-white md:text-base">Photo</p>
+          <p className="text-xs text-slate-500">{initialPhoto.file_name}</p>
+        </div>
       </div>
 
       {isFullscreenOpen && initialPhoto.url ? (
