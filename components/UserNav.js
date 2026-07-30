@@ -158,9 +158,9 @@ export default function UserNav() {
         <button
           type="button"
           onClick={() => setIsAccountMenuOpen((value) => !value)}
-          className="flex items-center space-x-2 rounded-full border border-slate-800 bg-slate-900/90 p-1 pl-3"
+          className="flex max-w-[220px] items-center space-x-2 rounded-full border border-slate-800 bg-slate-900/90 p-1 pl-3"
         >
-          <span className="max-w-[120px] truncate text-xs font-medium text-slate-300 sm:max-w-[160px]">
+          <span className="max-w-[110px] truncate text-xs font-medium text-slate-300 sm:max-w-[160px]">
             {username}
           </span>
 
@@ -174,7 +174,7 @@ export default function UserNav() {
         </button>
 
         {isAccountMenuOpen ? (
-          <div className="absolute right-0 z-40 mt-2 w-80 rounded-2xl border border-slate-800 bg-slate-950/95 p-3 shadow-2xl shadow-black/50">
+          <div className="absolute right-0 z-40 mt-2 w-[min(60vw,20rem)] rounded-2xl border border-slate-800 bg-slate-950/95 p-3 shadow-2xl shadow-black/50 sm:w-80">
             <div className="mb-3 flex items-center justify-between gap-2 border-b border-slate-800 pb-3">
               <div>
                 <p className="text-sm font-semibold text-white">Account</p>

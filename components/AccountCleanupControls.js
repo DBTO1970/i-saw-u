@@ -58,23 +58,25 @@ export default function AccountCleanupControls() {
         </div>
       ) : null}
 
-      <div className="flex flex-wrap gap-3">
+      <div className="space-y-2">
         <button
           type="button"
           onClick={() => runAction('photos', 'DELETE PHOTOS')}
           disabled={isPending}
-          className="rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2 text-sm font-semibold text-red-200 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex w-full items-center justify-between rounded-xl border border-red-500/40 bg-red-500/10 px-3 py-2.5 text-left text-sm font-semibold text-red-200 transition hover:bg-red-500/20 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {pendingAction === 'photos' ? 'Deleting…' : 'Delete all my photos'}
+          <span>{pendingAction === 'photos' ? 'Deleting…' : 'Delete all my photos'}</span>
+          <span aria-hidden="true">→</span>
         </button>
 
         <button
           type="button"
           onClick={() => runAction('account', 'DELETE MY ACCOUNT')}
           disabled={isPending}
-          className="rounded-xl border border-red-500/60 bg-red-600/20 px-3 py-2 text-sm font-semibold text-red-100 transition hover:bg-red-600/30 disabled:cursor-not-allowed disabled:opacity-60"
+          className="flex w-full items-center justify-between rounded-xl border border-red-500/60 bg-red-600/20 px-3 py-2.5 text-left text-sm font-semibold text-red-100 transition hover:bg-red-600/30 disabled:cursor-not-allowed disabled:opacity-60"
         >
-          {pendingAction === 'account' ? 'Deleting account…' : 'Delete my account'}
+          <span>{pendingAction === 'account' ? 'Deleting account…' : 'Delete my account'}</span>
+          <span aria-hidden="true">→</span>
         </button>
       </div>
     </div>
