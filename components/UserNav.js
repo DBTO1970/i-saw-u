@@ -3,12 +3,14 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '../lib/supabase/client';
 import Link from 'next/link';
+import AccountCleanupControls from './AccountCleanupControls';
 
 export default function UserNav() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
   const [isOpen, setIsOpen] = useState(false);
+  const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
 
   const supabase = createClient();
 
@@ -70,6 +72,7 @@ export default function UserNav() {
     setUser(null);
     setProfile(null);
     setIsOpen(false);
+    setIsAccountMenuOpen(false);
     window.location.reload();
   };
 
@@ -151,28 +154,44 @@ export default function UserNav() {
         <span>My Library</span>
       </Link>
 
-      <div className="flex items-center space-x-2 rounded-full border border-slate-800 bg-slate-900/90 p-1 pl-3">
-        <span className="max-w-[120px] truncate text-xs font-medium text-slate-300 sm:max-w-[160px]">
-          {username}
-        </span>
-
-        {avatarUrl ? (
-          <img src={avatarUrl} alt="Avatar" className="h-7 w-7 rounded-full object-cover" />
-        ) : (
-          <div className="flex h-7 w-7 items-center justify-center rounded-full bg-cyan-600 text-xs font-bold text-white">
-            {username ? username.charAt(0).toUpperCase() : 'U'}
-          </div>
-        )}
-
+      <div className="relative">
         <button
-          onClick={handleSignOut}
-          title="Sign Out"
-          className="rounded-full p-1.5 text-slate-400 transition-colors hover:bg-slate-800 hover:text-red-400"
+          type="button"
+          onClick={() => setIsAccountMenuOpen((value) => !value)}
+          className="flex items-center space-x-2 rounded-full border border-slate-800 bg-slate-900/90 p-1 pl-3"
         >
-          <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-          </svg>
+          <span className="max-w-[120px] truncate text-xs font-medium text-slate-300 sm:max-w-[160px]">
+            {username}
+          </span>
+
+          {avatarUrl ? (
+            <img src={avatarUrl} alt="Avatar" className="h-7 w-7 rounded-full object-cover" />
+          ) : (
+            <div className="flex h-7 w-7 items-center justify-center rounded-full bg-cyan-600 text-xs font-bold text-white">
+              {username ? username.charAt(0).toUpperCase() : 'U'}
+            </div>
+          )}
         </button>
+
+        {isAccountMenuOpen ? (
+          <div className="absolute right-0 z-40 mt-2 w-80 rounded-2xl border border-slate-800 bg-slate-950/95 p-3 shadow-2xl shadow-black/50">
+            <div className="mb-3 flex items-center justify-between gap-2 border-b border-slate-800 pb-3">
+              <div>
+                <p className="text-sm font-semibold text-white">Account</p>
+                <p className="text-xs text-slate-400">{username}</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-slate-300 transition hover:border-red-500/40 hover:text-red-300"
+              >
+                Sign out
+              </button>
+            </div>
+
+            <AccountCleanupControls />
+          </div>
+        ) : null}
       </div>
     </div>
   );
