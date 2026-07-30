@@ -43,5 +43,5 @@ export default function manifest(): MetadataRoute.Manifest {
         ],
       },
     },
-  };
+  } as unknown as MetadataRoute.Manifest;
 }
