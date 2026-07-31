@@ -118,13 +118,16 @@ export default async function HomePage({ searchParams }) {
                 Sign in with Google or GitHub to save uploaded WebP photos and matched show details directly to your personal library!
               </p>
               <p className="text-xs text-slate-400 sm:text-sm">
-                Have questions, feedback, or inquiries? Reach out at{' '}
+                Want to explore the code, share feedback, or contribute? Visit the{' '}
                 <a
-                  href="mailto:donbartojunior@gmail.com"
+                  href="https://github.com/DBTO1970/i-saw-u"
+                  target="_blank"
+                  rel="noreferrer"
                   className="text-cyan-400 underline decoration-cyan-500/30 underline-offset-4 transition-colors hover:text-cyan-300"
                 >
-                  donbartojunior@gmail.com
-                </a>.
+                  public GitHub repository
+                </a>
+                .
               </p>
             </div>
           </details>
