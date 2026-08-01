@@ -103,6 +103,10 @@ export default function RecentFanPhotosFeed({
     }));
   };
 
+  const clearDismissed = () => {
+    setDismissedByShowDate({});
+  };
+
   return (
     <details open className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-left">
@@ -118,6 +122,18 @@ export default function RecentFanPhotosFeed({
       </summary>
 
       <div className="border-t border-slate-800 p-4">
+        {Object.keys(dismissedByShowDate).length > 0 ? (
+          <div className="mb-3 flex justify-end">
+            <button
+              type="button"
+              onClick={clearDismissed}
+              className="rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-slate-300 transition hover:border-cyan-500/40 hover:text-cyan-200"
+            >
+              Clear dismissed
+            </button>
+          </div>
+        ) : null}
+
         {error ? (
           <div className="rounded-2xl border border-dashed border-slate-800 p-6 text-center text-sm text-slate-400">
             {error}
