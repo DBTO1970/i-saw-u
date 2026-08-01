@@ -91,7 +91,11 @@ export default async function LibraryPage() {
             <span className="text-xs text-cyan-400 font-medium">Optimized WebP Format</span>
           </div>
 
-          {photos.length === 0 ? (
+          {photosError ? (
+            <div className="rounded-2xl border border-dashed border-slate-800 p-8 text-center text-slate-400">
+              {photosError}
+            </div>
+          ) : photos.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-slate-800 p-8 text-center text-slate-400">
               No saved photos yet. Upload a photo on the home page and click "Save to Library".
             </div>

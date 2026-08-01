@@ -78,6 +78,21 @@ function buildVisibilityAwareRawExif(rawExifValue, isPublic) {
   return nextRawExif;
 }
 
+async function verifyPhotoRecordExists(supabase, userId, photoId) {
+  const { data, error } = await supabase
+    .from('photos')
+    .select('id')
+    .eq('id', photoId)
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (error || !data) {
+    return false;
+  }
+
+  return true;
+}
+
 function isVisibilitySchemaError(error) {
   const message = error?.message || '';
   return (
@@ -181,8 +196,14 @@ export async function savePhotoToLibrary(formData) {
         return { success: false, error: fallbackDbError.message };
       }
 
+      const createdPhotoId = fallbackPhotoRecord?.id || photoId;
+      const exists = await verifyPhotoRecordExists(supabase, user.id, createdPhotoId);
+      if (!exists) {
+        return { success: false, error: 'Photo saved to storage, but library record was not found.' };
+      }
+
       await autoBookmarkShow(supabase, user.id, matchedShowDate, parsedRawExif);
-      return { success: true, photoId: fallbackPhotoRecord?.id || photoId };
+      return { success: true, photoId: createdPhotoId };
     }
 
     if (dbError) {
@@ -190,8 +211,14 @@ export async function savePhotoToLibrary(formData) {
       return { success: false, error: dbError.message };
     }
 
+    const createdPhotoId = photoRecord?.id || photoId;
+    const exists = await verifyPhotoRecordExists(supabase, user.id, createdPhotoId);
+    if (!exists) {
+      return { success: false, error: 'Photo saved to storage, but library record was not found.' };
+    }
+
     await autoBookmarkShow(supabase, user.id, matchedShowDate, parsedRawExif);
-    return { success: true, photoId: photoRecord?.id || photoId };
+    return { success: true, photoId: createdPhotoId };
   } catch (error) {
     console.error('savePhotoToLibrary Error:', error);
     return { success: false, error: error.message || 'Failed to save photo.' };
