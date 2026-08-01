@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 
 function formatRecentFanPhotoTimestamp(timestamp) {
   if (!timestamp) return 'recently';
@@ -11,15 +11,15 @@ function formatRecentFanPhotoTimestamp(timestamp) {
 }
 
 export default function RecentFanPhotosFeed({ shows = [], bookmarkedShowDates = [], error = null }) {
-  const router = useRouter();
   const bookmarkedSet = new Set(bookmarkedShowDates);
   const [dismissed, setDismissed] = useState(new Set());
 
   const visibleShows = shows.filter((show) => !dismissed.has(show.show_date));
 
-  const handleClick = (showDate) => {
+  const dismiss = (event, showDate) => {
+    event.preventDefault();
+    event.stopPropagation();
     setDismissed((prev) => new Set([...prev, showDate]));
-    router.push(`/library/show/${showDate}`);
   };
 
   return (
@@ -50,36 +50,48 @@ export default function RecentFanPhotosFeed({ shows = [], bookmarkedShowDates = 
             {visibleShows.map((show) => {
               const isBookmarked = bookmarkedSet.has(show.show_date);
               return (
-                <button
-                  key={show.show_date}
-                  type="button"
-                  onClick={() => handleClick(show.show_date)}
-                  className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 text-left transition-all hover:border-cyan-500/40"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-xs font-bold text-cyan-400">{show.show_date || 'Unknown date'}</p>
-                        {isBookmarked ? (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
-                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-2.5 w-2.5">
-                              <path fillRule="evenodd" d="M6.32 2.577a49.255 49.255 0 0111.36 0c1.497.174 2.57 1.46 2.57 2.93V21a.75.75 0 01-1.085.67L12 18.089l-7.165 3.583A.75.75 0 013.75 21V5.507c0-1.47 1.073-2.756 2.57-2.93z" clipRule="evenodd" />
-                            </svg>
-                            Bookmarked
-                          </span>
-                        ) : null}
+                <div key={show.show_date} className="relative">
+                  {/* Dismiss X button */}
+                  <button
+                    type="button"
+                    aria-label="Dismiss"
+                    onClick={(e) => dismiss(e, show.show_date)}
+                    className="absolute right-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-slate-600 bg-slate-800 text-slate-400 transition hover:border-slate-500 hover:bg-slate-700 hover:text-white"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" className="h-2.5 w-2.5">
+                      <path d="M18 6L6 18M6 6l12 12" />
+                    </svg>
+                  </button>
+
+                  <Link
+                    href={`/library/show/${show.show_date}`}
+                    className="block rounded-2xl border border-slate-800 bg-slate-900/70 p-4 pr-8 transition-all hover:border-cyan-500/40"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="text-xs font-bold text-cyan-400">{show.show_date || 'Unknown date'}</p>
+                          {isBookmarked ? (
+                            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+                              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-2.5 w-2.5">
+                                <path fillRule="evenodd" d="M6.32 2.577a49.255 49.255 0 0111.36 0c1.497.174 2.57 1.46 2.57 2.93V21a.75.75 0 01-1.085.67L12 18.089l-7.165 3.583A.75.75 0 013.75 21V5.507c0-1.47 1.073-2.756 2.57-2.93z" clipRule="evenodd" />
+                              </svg>
+                              Bookmarked
+                            </span>
+                          ) : null}
+                        </div>
+                        <p className="mt-0.5 truncate text-base font-semibold text-white">{show.venue_name || 'Venue Unknown'}</p>
+                        {show.location ? <p className="truncate text-xs text-slate-400">{show.location}</p> : null}
                       </div>
-                      <p className="mt-0.5 truncate text-base font-semibold text-white">{show.venue_name || 'Venue Unknown'}</p>
-                      {show.location ? <p className="truncate text-xs text-slate-400">{show.location}</p> : null}
+                      <span className="shrink-0 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-1 text-[11px] font-semibold text-cyan-200">
+                        +{show.new_public_photo_count} {show.new_public_photo_count === 1 ? 'photo' : 'photos'}
+                      </span>
                     </div>
-                    <span className="shrink-0 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-1 text-[11px] font-semibold text-cyan-200">
-                      +{show.new_public_photo_count} {show.new_public_photo_count === 1 ? 'photo' : 'photos'}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-xs text-slate-400">
-                    Latest: {formatRecentFanPhotoTimestamp(show.latest_public_photo_at)}
-                  </p>
-                </button>
+                    <p className="mt-2 text-xs text-slate-400">
+                      Latest: {formatRecentFanPhotoTimestamp(show.latest_public_photo_at)}
+                    </p>
+                  </Link>
+                </div>
               );
             })}
           </div>

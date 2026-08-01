@@ -1005,3 +1005,104 @@ export async function togglePhotoLike(photoId) {
     return { success: false, error: error.message };
   }
 }
+/**
+ * Fetch all public photos the current user has liked, with signed URLs and show metadata.
+ */
+export async function getUserLikedPhotos() {
+  try {
+    const supabase = createClient();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      return { photos: [], error: 'User not authenticated' };
+    }
+
+    // Get photo IDs the user has liked
+    const { data: likeRows, error: likeError } = await supabase
+      .from('photo_likes')
+      .select('photo_id, created_at')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (likeError) {
+      return { photos: [], error: likeError.message };
+    }
+
+    if (!likeRows || likeRows.length === 0) {
+      return { photos: [], error: null };
+    }
+
+    const photoIds = likeRows.map((r) => r.photo_id);
+    const likedAtByPhotoId = new Map(likeRows.map((r) => [r.photo_id, r.created_at]));
+
+    // Fetch the photos (only public ones from other users)
+    const { data: photos, error: photosError } = await supabase
+      .from('photos')
+      .select('*')
+      .in('id', photoIds)
+      .neq('user_id', user.id);
+
+    if (photosError) {
+      return { photos: [], error: photosError.message };
+    }
+
+    const normalizedPhotos = (photos || []).map(withNormalizedVisibility)
+      .filter((p) => p.is_public === true);
+
+    if (normalizedPhotos.length === 0) {
+      return { photos: [], error: null };
+    }
+
+    // Fetch like counts for these photos
+    const { data: allLikeRows } = await supabase
+      .from('photo_likes')
+      .select('photo_id')
+      .in('photo_id', photoIds);
+
+    const likeCountByPhoto = new Map();
+    (allLikeRows || []).forEach((row) => {
+      likeCountByPhoto.set(row.photo_id, (likeCountByPhoto.get(row.photo_id) || 0) + 1);
+    });
+
+    // Fetch creator profiles
+    const creatorIds = [...new Set(normalizedPhotos.map((p) => p.user_id).filter(Boolean))];
+    const { data: profiles } = await supabase
+      .from('profiles')
+      .select('id, username, display_name, avatar_url')
+      .in('id', creatorIds);
+
+    const profileById = new Map((profiles || []).map((p) => [p.id, p]));
+
+    // Generate signed URLs and assemble
+    const photosWithUrls = await Promise.all(
+      normalizedPhotos.map(async (photo) => {
+        const { data: signedData } = await supabase.storage
+          .from('user-photos')
+          .createSignedUrl(photo.storage_path, 60 * 60);
+
+        const creator = profileById.get(photo.user_id) || null;
+
+        return {
+          ...photo,
+          url: signedData?.signedUrl || null,
+          like_count: likeCountByPhoto.get(photo.id) || 0,
+          liked_by_me: true,
+          liked_at: likedAtByPhotoId.get(photo.id) || null,
+          creator: creator ? {
+            id: creator.id,
+            username: creator.username,
+            display_name: creator.display_name,
+            avatar_url: creator.avatar_url,
+          } : null,
+        };
+      })
+    );
+
+    // Sort by when the user liked them (most recent first)
+    photosWithUrls.sort((a, b) => String(b.liked_at || '').localeCompare(String(a.liked_at || '')));
+
+    return { photos: photosWithUrls, error: null };
+  } catch (error) {
+    return { photos: [], error: error.message };
+  }
+}
