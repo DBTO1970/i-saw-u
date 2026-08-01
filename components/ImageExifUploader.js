@@ -666,10 +666,12 @@ export default function ImageExifUploader({
       if (metadata.gpsLongitude !== 'Not available') formData.append('gpsLongitude', String(metadata.gpsLongitude));
       if (matchedShowDate) formData.append('matchedShowDate', matchedShowDate);
       if (showStartTime) formData.append('showStartTime', showStartTime);
+      const { diagnostics: _diagnostics, ...metadataForSave } = metadata;
+
       formData.append(
         'rawExif',
         JSON.stringify({
-          ...metadata,
+          ...metadataForSave,
           showMetadata: {
             matchedShowDate: matchedShowDate || null,
             showStartTime: showStartTime || null,
