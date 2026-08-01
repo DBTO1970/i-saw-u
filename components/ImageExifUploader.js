@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ExifReader from 'exifreader';
 import { convertToWebP } from '../lib/image-optimizer';
-import { savePhotoToLibrary } from '../app/actions/user-library';
 
 const emptyMetadata = {
   dateTimeOriginal: 'Not available',
@@ -696,7 +695,11 @@ export default function ImageExifUploader({
         })
       );
 
-      const res = await savePhotoToLibrary(formData);
+      const response = await fetch('/api/library/save-photo', {
+        method: 'POST',
+        body: formData,
+      });
+      const res = await response.json();
       if (!res || typeof res !== 'object' || typeof res.success !== 'boolean') {
         setSaveMessage({ type: 'error', text: 'Save did not complete correctly. Please try again.' });
         return;
