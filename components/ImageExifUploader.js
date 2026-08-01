@@ -695,6 +695,10 @@ export default function ImageExifUploader({
       );
 
       const res = await savePhotoToLibrary(formData);
+      if (!res || typeof res !== 'object' || typeof res.success !== 'boolean') {
+        throw new Error('Unexpected response while saving photo.');
+      }
+
       if (res.success) {
         setSaveMessage({ type: 'success', text: 'Saved to your personal library!' });
       } else {
