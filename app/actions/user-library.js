@@ -182,7 +182,7 @@ export async function savePhotoToLibrary(formData) {
       }
 
       await autoBookmarkShow(supabase, user.id, matchedShowDate, parsedRawExif);
-      return { success: true, photo: withNormalizedVisibility(fallbackPhotoRecord) };
+      return { success: true, photoId: fallbackPhotoRecord?.id || photoId };
     }
 
     if (dbError) {
@@ -191,7 +191,7 @@ export async function savePhotoToLibrary(formData) {
     }
 
     await autoBookmarkShow(supabase, user.id, matchedShowDate, parsedRawExif);
-    return { success: true, photo: withNormalizedVisibility(photoRecord) };
+    return { success: true, photoId: photoRecord?.id || photoId };
   } catch (error) {
     console.error('savePhotoToLibrary Error:', error);
     return { success: false, error: error.message || 'Failed to save photo.' };
