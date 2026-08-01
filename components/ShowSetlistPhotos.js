@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import PhotoLikeButton from './PhotoLikeButton';
 
 function normalizeSongLabel(value) {
   return String(value || '')
@@ -196,7 +197,7 @@ export default function ShowSetlistPhotos({ setGroups = [], photos = [], current
                     key={photo.id}
                     type="button"
                     onClick={() => setSelectedPhoto(photo)}
-                    className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70 text-left transition hover:border-cyan-500/40"
+                    className="group relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70 text-left transition hover:border-cyan-500/40"
                   >
                     {photo.url ? (
                       <img src={photo.url} alt={photo.file_name || 'Fan photo'} className="h-auto w-full object-contain" />
@@ -205,8 +206,16 @@ export default function ShowSetlistPhotos({ setGroups = [], photos = [], current
                         Photo unavailable
                       </div>
                     )}
-                    <div className="p-3">
+                    <div className="flex items-center justify-between gap-2 p-3">
                       <p className="truncate text-[11px] text-slate-400">{formatPhotoTimestamp(photo)}</p>
+                      <div onClick={(e) => e.stopPropagation()}>
+                        <PhotoLikeButton
+                          photoId={photo.id}
+                          initialLikeCount={photo.like_count ?? 0}
+                          initialLikedByMe={photo.liked_by_me ?? false}
+                          size="sm"
+                        />
+                      </div>
                     </div>
                   </button>
                 );
@@ -260,13 +269,21 @@ export default function ShowSetlistPhotos({ setGroups = [], photos = [], current
                 <p className="text-sm font-semibold text-white">{activeSongEntry?.label || 'Photo preview'}</p>
                 <p className="text-xs text-slate-400">{activeSongEntry?.groupLabel || 'Setlist'}</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedPhoto(null)}
-                className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:border-cyan-500/40 hover:text-white"
-              >
-                Close
-              </button>
+              <div className="flex items-center gap-3">
+                <PhotoLikeButton
+                  photoId={selectedPhoto.id}
+                  initialLikeCount={selectedPhoto.like_count ?? 0}
+                  initialLikedByMe={selectedPhoto.liked_by_me ?? false}
+                  size="md"
+                />
+                <button
+                  type="button"
+                  onClick={() => setSelectedPhoto(null)}
+                  className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:border-cyan-500/40 hover:text-white"
+                >
+                  Close
+                </button>
+              </div>
             </div>
 
             <div className="max-h-[80vh] overflow-y-auto p-4">

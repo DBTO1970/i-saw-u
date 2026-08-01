@@ -868,7 +868,9 @@ export async function getPublicPhotosForShow(showDate) {
       return { photos: [], error: null };
     }
 
-    const [{ data: profiles, error: profileError }, { data: showRows, error: showRowsError }, { data: userPhotoRows, error: userPhotoRowsError }] = await Promise.all([
+    const photoIds = publicPhotos.map((p) => p.id);
+
+    const [{ data: profiles, error: profileError }, { data: showRows, error: showRowsError }, { data: userPhotoRows, error: userPhotoRowsError }, { data: likeRows, error: likeRowsError }] = await Promise.all([
       supabase
         .from('profiles')
         .select('id, username, avatar_url, display_name')
@@ -881,15 +883,22 @@ export async function getPublicPhotosForShow(showDate) {
         .from('photos')
         .select('user_id, is_public, raw_exif')
         .in('user_id', userIds),
+      supabase
+        .from('photo_likes')
+        .select('photo_id, user_id')
+        .in('photo_id', photoIds),
     ]);
 
     const safeProfiles = profileError ? [] : (profiles || []);
     const safeShowRows = showRowsError ? [] : (showRows || []);
     const safeUserPhotoRows = userPhotoRowsError ? [] : (userPhotoRows || []);
+    const safeLikeRows = likeRowsError ? [] : (likeRows || []);
 
     const profileById = new Map(safeProfiles.map((profile) => [profile.id, profile]));
     const showsAttendedByUser = new Map();
     const publicPhotosByUser = new Map();
+    const likeCountByPhoto = new Map();
+    const likedByMeSet = new Set();
 
     safeShowRows.forEach((row) => {
       showsAttendedByUser.set(row.user_id, (showsAttendedByUser.get(row.user_id) || 0) + 1);
@@ -898,6 +907,13 @@ export async function getPublicPhotosForShow(showDate) {
     safeUserPhotoRows.forEach((row) => {
       if (normalizePhotoVisibility(row) === true) {
         publicPhotosByUser.set(row.user_id, (publicPhotosByUser.get(row.user_id) || 0) + 1);
+      }
+    });
+
+    safeLikeRows.forEach((row) => {
+      likeCountByPhoto.set(row.photo_id, (likeCountByPhoto.get(row.photo_id) || 0) + 1);
+      if (row.user_id === user.id) {
+        likedByMeSet.add(row.photo_id);
       }
     });
 
@@ -913,6 +929,8 @@ export async function getPublicPhotosForShow(showDate) {
           ...photo,
           url: signedData?.signedUrl || null,
           isMine: photo.user_id === user.id,
+          like_count: likeCountByPhoto.get(photo.id) || 0,
+          liked_by_me: likedByMeSet.has(photo.id),
           creator: creator ? {
             id: creator.id,
             username: creator.username,
@@ -930,5 +948,60 @@ export async function getPublicPhotosForShow(showDate) {
     return { photos: photosWithUrls, error: null };
   } catch (error) {
     return { photos: [], error: error.message };
+  }
+}
+
+/**
+ * Toggle a like on a public photo for the authenticated user.
+ * Returns the new like count and whether the current user has liked it.
+ */
+export async function togglePhotoLike(photoId) {
+  try {
+    const supabase = createClient();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      return { success: false, error: 'User not authenticated' };
+    }
+
+    const { data: existing } = await supabase
+      .from('photo_likes')
+      .select('id')
+      .eq('photo_id', photoId)
+      .eq('user_id', user.id)
+      .maybeSingle();
+
+    if (existing) {
+      const { error: deleteError } = await supabase
+        .from('photo_likes')
+        .delete()
+        .eq('photo_id', photoId)
+        .eq('user_id', user.id);
+
+      if (deleteError) {
+        return { success: false, error: deleteError.message };
+      }
+    } else {
+      const { error: insertError } = await supabase
+        .from('photo_likes')
+        .insert({ photo_id: photoId, user_id: user.id });
+
+      if (insertError) {
+        return { success: false, error: insertError.message };
+      }
+    }
+
+    const { count } = await supabase
+      .from('photo_likes')
+      .select('id', { count: 'exact', head: true })
+      .eq('photo_id', photoId);
+
+    return {
+      success: true,
+      liked: !existing,
+      likeCount: count ?? 0,
+    };
+  } catch (error) {
+    return { success: false, error: error.message };
   }
 }

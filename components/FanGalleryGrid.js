@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import PhotoLikeButton from './PhotoLikeButton';
 
 export default function FanGalleryGrid({ photos = [], currentUserId = null }) {
   const [selectedPhoto, setSelectedPhoto] = useState(null);
@@ -33,6 +34,15 @@ export default function FanGalleryGrid({ photos = [], currentUserId = null }) {
                   Photo unavailable
                 </div>
               )}
+              {/* Like badge on thumbnail */}
+              <div className="absolute bottom-1.5 right-1.5" onClick={(e) => e.stopPropagation()}>
+                <PhotoLikeButton
+                  photoId={photo.id}
+                  initialLikeCount={photo.like_count ?? 0}
+                  initialLikedByMe={photo.liked_by_me ?? false}
+                  size="sm"
+                />
+              </div>
             </button>
           );
         })}
@@ -46,13 +56,21 @@ export default function FanGalleryGrid({ photos = [], currentUserId = null }) {
           <div className="w-full max-w-5xl rounded-2xl border border-slate-700 bg-slate-950/95 shadow-2xl shadow-black/60">
             <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
               <p className="text-sm font-semibold text-white">Fan gallery</p>
-              <button
-                type="button"
-                onClick={() => setSelectedPhoto(null)}
-                className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:border-cyan-500/40 hover:text-white"
-              >
-                Close
-              </button>
+              <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
+                <PhotoLikeButton
+                  photoId={selectedPhoto.id}
+                  initialLikeCount={selectedPhoto.like_count ?? 0}
+                  initialLikedByMe={selectedPhoto.liked_by_me ?? false}
+                  size="md"
+                />
+                <button
+                  type="button"
+                  onClick={() => setSelectedPhoto(null)}
+                  className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-1.5 text-xs font-semibold text-slate-300 hover:border-cyan-500/40 hover:text-white"
+                >
+                  Close
+                </button>
+              </div>
             </div>
 
             <div className="p-4" onClick={(event) => event.stopPropagation()}>
