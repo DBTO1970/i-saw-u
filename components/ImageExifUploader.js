@@ -695,10 +695,15 @@ export default function ImageExifUploader({
       );
 
       const res = await savePhotoToLibrary(formData);
-      if (res?.success === false) {
-        setSaveMessage({ type: 'error', text: res.error || 'Failed to save photo.' });
-      } else {
+      if (!res || typeof res !== 'object' || typeof res.success !== 'boolean') {
+        setSaveMessage({ type: 'error', text: 'Save did not complete correctly. Please try again.' });
+        return;
+      }
+
+      if (res.success) {
         setSaveMessage({ type: 'success', text: 'Saved to your personal library!' });
+      } else {
+        setSaveMessage({ type: 'error', text: res.error || 'Failed to save photo.' });
       }
     } catch (err) {
       setSaveMessage({ type: 'error', text: err.message || 'Error converting/uploading image.' });
