@@ -661,8 +661,18 @@ export default function ImageExifUploader({
       formData.append('fileName', selectedFileName || originalName);
       formData.append('dateTaken', metadata.dateTimeOriginal || '');
       formData.append('timeTaken', metadata.timeTaken || '');
-      if (metadata.gpsLatitude !== 'Not available') formData.append('gpsLatitude', String(metadata.gpsLatitude));
-      if (metadata.gpsLongitude !== 'Not available') formData.append('gpsLongitude', String(metadata.gpsLongitude));
+      const rawLat = toDecimalDegrees(metadata.rawGpsLatitude);
+      const rawLon = toDecimalDegrees(metadata.rawGpsLongitude);
+      if (rawLat !== null && Number.isFinite(rawLat)) {
+        const latRef = (metadata.rawGpsLatitudeRef || '').toUpperCase();
+        const signedLat = latRef.startsWith('S') ? -Math.abs(rawLat) : rawLat;
+        formData.append('gpsLatitude', String(signedLat));
+      }
+      if (rawLon !== null && Number.isFinite(rawLon)) {
+        const lonRef = (metadata.rawGpsLongitudeRef || '').toUpperCase();
+        const signedLon = lonRef.startsWith('W') ? -Math.abs(rawLon) : rawLon;
+        formData.append('gpsLongitude', String(signedLon));
+      }
       if (matchedShowDate) formData.append('matchedShowDate', matchedShowDate);
       if (showStartTime) formData.append('showStartTime', showStartTime);
       const { diagnostics: _diagnostics, ...metadataForSave } = metadata;
