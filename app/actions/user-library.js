@@ -851,21 +851,6 @@ export async function getPublicPhotosForShow(showDate) {
       return { photos: [], error: 'User not authenticated' };
     }
 
-    const { data: savedShow, error: savedShowError } = await supabase
-      .from('saved_shows')
-      .select('id')
-      .eq('user_id', user.id)
-      .eq('show_date', showDate)
-      .maybeSingle();
-
-    if (savedShowError) {
-      return { photos: [], error: savedShowError.message };
-    }
-
-    if (!savedShow) {
-      return { photos: [], error: 'Bookmark this show to view the fan gallery.' };
-    }
-
     const { data: photos, error } = await supabase
       .from('photos')
       .select('*')

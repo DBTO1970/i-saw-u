@@ -10,6 +10,7 @@ import {
 } from '../../../actions/user-library';
 import FanGalleryGrid from '../../../../components/FanGalleryGrid';
 import ShowSetlistPhotos from '../../../../components/ShowSetlistPhotos';
+import ShowBookmarkButton from '../../../../components/ShowBookmarkButton';
 
 function isValidDate(d) {
   return /^\d{4}-\d{2}-\d{2}$/.test(d);
@@ -39,13 +40,13 @@ export default async function ShowDetailPage({ params }) {
     { show: savedShow },
     { show: liveShow },
     { photos },
+    publicGalleryResult,
   ] = await Promise.all([
     getUserSavedShowByDate(showDate),
     getShowByDate(showDate),
     getUserPhotosForShow(showDate),
+    getPublicPhotosForShow(showDate),
   ]);
-
-  const publicGalleryResult = savedShow ? await getPublicPhotosForShow(showDate) : { photos: [], error: null };
 
   // Combine: prefer live Phish.net data for rich details; fall back to saved row
   const showData = liveShow
@@ -126,6 +127,11 @@ export default async function ShowDetailPage({ params }) {
               >
                 phish.in ↗
               </a>
+              <ShowBookmarkButton
+                showDate={showDate}
+                showData={showData}
+                initialIsBookmarked={!!savedShow}
+              />
             </div>
           </div>
         </div>
@@ -151,11 +157,7 @@ export default async function ShowDetailPage({ params }) {
 
         <section className="space-y-4">
           <h2 className="text-lg font-bold text-white">Fan Gallery</h2>
-          {!savedShow ? (
-            <div className="rounded-xl border border-dashed border-slate-800 p-6 text-center text-sm text-slate-400">
-              Bookmark this show to unlock the fan gallery.
-            </div>
-          ) : publicGalleryResult.error ? (
+          {publicGalleryResult.error ? (
             <div className="rounded-xl border border-dashed border-slate-800 p-6 text-center text-sm text-slate-400">
               {publicGalleryResult.error}
             </div>
