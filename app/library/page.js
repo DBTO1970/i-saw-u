@@ -190,7 +190,7 @@ export default async function LibraryPage() {
               <div>
                 <h2 className="text-xl font-semibold text-white">Recent Fan Photos</h2>
                 <p className="text-xs text-slate-400">
-                  New public fan photos added to your bookmarked shows
+                    Public fan photos from other fans across all Phish shows
                 </p>
               </div>
               <span className="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-slate-300">
@@ -204,7 +204,7 @@ export default async function LibraryPage() {
                 </div>
               ) : recentFanPhotoShows.length === 0 ? (
                 <div className="rounded-2xl border border-dashed border-slate-800 p-6 text-center text-sm text-slate-400">
-                  No recent fan-photo activity yet on your bookmarked shows.
+                  No public fan photos from other users yet.
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

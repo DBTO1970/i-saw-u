@@ -181,6 +181,7 @@ export async function savePhotoToLibrary(formData) {
         return { success: false, error: fallbackDbError.message };
       }
 
+      await autoBookmarkShow(supabase, user.id, matchedShowDate, parsedRawExif);
       return { success: true, photo: withNormalizedVisibility(fallbackPhotoRecord) };
     }
 
@@ -189,10 +190,46 @@ export async function savePhotoToLibrary(formData) {
       return { success: false, error: dbError.message };
     }
 
+    await autoBookmarkShow(supabase, user.id, matchedShowDate, parsedRawExif);
     return { success: true, photo: withNormalizedVisibility(photoRecord) };
   } catch (error) {
     console.error('savePhotoToLibrary Error:', error);
     return { success: false, error: error.message || 'Failed to save photo.' };
+  }
+}
+
+/**
+ * Silently upsert a show bookmark when a photo with a matched show date is saved.
+ * Only inserts — existing bookmarks (with user notes etc.) are left untouched.
+ */
+async function autoBookmarkShow(supabase, userId, matchedShowDate, rawExif) {
+  if (!matchedShowDate) {
+    return;
+  }
+
+  try {
+    const showMetadata = toObjectOrEmpty(toObjectOrEmpty(rawExif)?.showMetadata);
+    const showData = toObjectOrEmpty(showMetadata?.showData);
+    const venueName = showMetadata?.venueName || showData?.venueName || null;
+    const city = showMetadata?.city || showData?.city || null;
+    const state = showMetadata?.state || showData?.state || null;
+    const location = [city, state].filter(Boolean).join(', ') || null;
+
+    await supabase
+      .from('saved_shows')
+      .upsert(
+        {
+          user_id: userId,
+          show_date: matchedShowDate,
+          venue_name: venueName,
+          location: location,
+          show_data: Object.keys(showData).length > 0 ? showData : {},
+          user_notes: '',
+        },
+        { onConflict: 'user_id,show_date', ignoreDuplicates: true }
+      );
+  } catch (error) {
+    console.error('autoBookmarkShow Error:', error);
   }
 }
 
@@ -489,7 +526,8 @@ export async function getUserSavedShows() {
 }
 
 /**
- * Fetch bookmarked shows that recently received public fan photos from other users.
+ * Fetch Phish shows that recently received public fan photos from other users.
+ * Not limited to the user's bookmarked shows — any matched show with public photos qualifies.
  */
 export async function getRecentFanPhotoShows(limit = 8) {
   try {
@@ -500,71 +538,77 @@ export async function getRecentFanPhotoShows(limit = 8) {
       return { shows: [], error: 'User not authenticated' };
     }
 
-    const { data: savedShows, error: savedShowsError } = await supabase
-      .from('saved_shows')
-      .select('show_date, venue_name, location')
-      .eq('user_id', user.id);
-
-    if (savedShowsError) {
-      return { shows: [], error: savedShowsError.message };
-    }
-
-    const showDates = [...new Set((savedShows || []).map((show) => show.show_date).filter(Boolean))];
-    if (showDates.length === 0) {
-      return { shows: [], error: null };
-    }
-
+    // Fetch all public photos from other users that are matched to a Phish show
     const { data: photoRows, error: photoRowsError } = await supabase
       .from('photos')
       .select('*')
-      .in('matched_show_date', showDates)
       .neq('user_id', user.id)
+      .not('matched_show_date', 'is', null)
       .order('created_at', { ascending: false });
 
     if (photoRowsError) {
       return { shows: [], error: visibilitySchemaMissingMessage(photoRowsError) || photoRowsError.message };
     }
 
-    const fanPhotoStatsByShowDate = new Map();
+    // Fetch the current user's saved shows for venue info enrichment
+    const { data: savedShows } = await supabase
+      .from('saved_shows')
+      .select('show_date, venue_name, location')
+      .eq('user_id', user.id);
+
+    const savedShowMap = new Map((savedShows || []).map((s) => [s.show_date, s]));
+
+    // Group public photos by show date
+    const statsByShowDate = new Map();
     (photoRows || []).forEach((photoRow) => {
       const normalizedPhoto = withNormalizedVisibility(photoRow);
       if (!normalizedPhoto?.matched_show_date || normalizedPhoto.is_public !== true) {
         return;
       }
 
-      const currentStats = fanPhotoStatsByShowDate.get(normalizedPhoto.matched_show_date) || {
+      const showDate = normalizedPhoto.matched_show_date;
+      const current = statsByShowDate.get(showDate) || {
+        show_date: showDate,
+        venue_name: null,
+        location: null,
         new_public_photo_count: 0,
         latest_public_photo_at: null,
+        _firstPhoto: normalizedPhoto,
       };
 
-      currentStats.new_public_photo_count += 1;
+      current.new_public_photo_count += 1;
       if (
         normalizedPhoto.created_at &&
-        (!currentStats.latest_public_photo_at || normalizedPhoto.created_at > currentStats.latest_public_photo_at)
+        (!current.latest_public_photo_at || normalizedPhoto.created_at > current.latest_public_photo_at)
       ) {
-        currentStats.latest_public_photo_at = normalizedPhoto.created_at;
+        current.latest_public_photo_at = normalizedPhoto.created_at;
       }
 
-      fanPhotoStatsByShowDate.set(normalizedPhoto.matched_show_date, currentStats);
+      statsByShowDate.set(showDate, current);
     });
+
+    // Enrich each show entry with venue info
+    for (const [showDate, stats] of statsByShowDate) {
+      const saved = savedShowMap.get(showDate);
+      if (saved) {
+        stats.venue_name = saved.venue_name;
+        stats.location = saved.location;
+      } else {
+        const rawExif = toObjectOrEmpty(stats._firstPhoto?.raw_exif);
+        const showMetadata = toObjectOrEmpty(rawExif?.showMetadata);
+        const city = showMetadata?.city || null;
+        const state = showMetadata?.state || null;
+        stats.venue_name = showMetadata?.venueName || null;
+        stats.location = [city, state].filter(Boolean).join(', ') || null;
+      }
+      delete stats._firstPhoto;
+    }
 
     const normalizedLimit = Number.isFinite(Number(limit))
       ? Math.max(1, Math.floor(Number(limit)))
       : 8;
 
-    const recentShows = (savedShows || [])
-      .map((show) => {
-        const stats = fanPhotoStatsByShowDate.get(show.show_date);
-        if (!stats) {
-          return null;
-        }
-
-        return {
-          ...show,
-          ...stats,
-        };
-      })
-      .filter(Boolean)
+    const recentShows = Array.from(statsByShowDate.values())
       .sort((left, right) =>
         String(right.latest_public_photo_at || '').localeCompare(String(left.latest_public_photo_at || ''))
       )
