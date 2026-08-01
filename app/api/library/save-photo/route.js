@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { savePhotoToLibrary } from '../../../../actions/user-library';
+import { savePhotoToLibrary } from '../../../actions/user-library';
 
 export async function POST(request) {
   try {
