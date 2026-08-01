@@ -23,6 +23,26 @@ function formatDate(d) {
   return `${months[parseInt(m, 10) - 1]} ${parseInt(day, 10)}, ${y}`;
 }
 
+function getRawExif(photo) {
+  if (!photo?.raw_exif) {
+    return {};
+  }
+
+  if (typeof photo.raw_exif === 'string') {
+    try {
+      return JSON.parse(photo.raw_exif) || {};
+    } catch {
+      return {};
+    }
+  }
+
+  if (typeof photo.raw_exif === 'object' && !Array.isArray(photo.raw_exif)) {
+    return photo.raw_exif;
+  }
+
+  return {};
+}
+
 export default async function ShowDetailPage({ params }) {
   const { showDate } = await params;
 
@@ -189,14 +209,12 @@ export default async function ShowDetailPage({ params }) {
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {photos.map((photo) => {
-                const exif = (() => {
-                  try {
-                    return JSON.parse(photo.raw_exif || '{}');
-                  } catch {
-                    return {};
-                  }
-                })();
-                const currentSong = exif.showMetadata?.currentSong || '';
+                const exif = getRawExif(photo);
+                const currentSong =
+                  exif.showMetadata?.currentSong
+                  || exif.showMetadata?.calibrationMatchedSong
+                  || exif.showMetadata?.timingCalibration?.matchedSongLabel
+                  || '';
                 const timeLabel = exif.showMetadata?.timeContextLabel || '';
 
                 return (
