@@ -1,7 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+
+const DISMISSED_FAN_SHOWS_KEY_PREFIX = 'dismissedRecentFanShowsV1';
 
 function formatRecentFanPhotoTimestamp(timestamp) {
   if (!timestamp) return 'recently';
@@ -10,16 +12,95 @@ function formatRecentFanPhotoTimestamp(timestamp) {
   return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-export default function RecentFanPhotosFeed({ shows = [], bookmarkedShowDates = [], error = null }) {
+function getStorageKey(userId, sessionKey) {
+  const userSegment = userId || 'unknown-user';
+  const sessionSegment = sessionKey || 'unknown-session';
+  return `${DISMISSED_FAN_SHOWS_KEY_PREFIX}:${userSegment}:${sessionSegment}`;
+}
+
+function readDismissedShows(userId, sessionKey) {
+  if (typeof window === 'undefined') {
+    return {};
+  }
+
+  try {
+    const raw = window.sessionStorage.getItem(getStorageKey(userId, sessionKey));
+    if (!raw) {
+      return {};
+    }
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return {};
+    }
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function writeDismissedShows(userId, sessionKey, dismissedMap) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  try {
+    window.sessionStorage.setItem(getStorageKey(userId, sessionKey), JSON.stringify(dismissedMap));
+  } catch {
+    // no-op: UI can still function without persistence
+  }
+}
+
+export default function RecentFanPhotosFeed({
+  shows = [],
+  bookmarkedShowDates = [],
+  error = null,
+  currentUserId = null,
+  sessionKey = '',
+}) {
   const bookmarkedSet = new Set(bookmarkedShowDates);
-  const [dismissed, setDismissed] = useState(new Set());
+  const [dismissedByShowDate, setDismissedByShowDate] = useState({});
 
-  const visibleShows = shows.filter((show) => !dismissed.has(show.show_date));
+  useEffect(() => {
+    setDismissedByShowDate(readDismissedShows(currentUserId, sessionKey));
+  }, [currentUserId, sessionKey]);
 
-  const dismiss = (event, showDate) => {
+  useEffect(() => {
+    writeDismissedShows(currentUserId, sessionKey, dismissedByShowDate);
+  }, [currentUserId, sessionKey, dismissedByShowDate]);
+
+  const visibleShows = useMemo(
+    () =>
+      shows.filter((show) => {
+        const showDate = show?.show_date;
+        if (!showDate) {
+          return false;
+        }
+
+        const dismissedAt = dismissedByShowDate[showDate];
+        if (!dismissedAt) {
+          return true;
+        }
+
+        const latestAt = show?.latest_public_photo_at || '';
+        // Re-show a dismissed show when newer fan photos arrive.
+        return latestAt > dismissedAt;
+      }),
+    [shows, dismissedByShowDate],
+  );
+
+  const dismiss = (event, show) => {
     event.preventDefault();
     event.stopPropagation();
-    setDismissed((prev) => new Set([...prev, showDate]));
+    const showDate = show?.show_date;
+    if (!showDate) {
+      return;
+    }
+
+    const dismissedAt = show?.latest_public_photo_at || new Date().toISOString();
+    setDismissedByShowDate((prev) => ({
+      ...prev,
+      [showDate]: dismissedAt,
+    }));
   };
 
   return (
@@ -55,10 +136,10 @@ export default function RecentFanPhotosFeed({ shows = [], bookmarkedShowDates = 
                   <button
                     type="button"
                     aria-label="Dismiss"
-                    onClick={(e) => dismiss(e, show.show_date)}
-                    className="absolute right-2 top-2 z-10 flex h-5 w-5 items-center justify-center rounded-full border border-slate-600 bg-slate-800 text-slate-400 transition hover:border-slate-500 hover:bg-slate-700 hover:text-white"
+                    onClick={(e) => dismiss(e, show)}
+                    className="absolute right-2 top-2 z-10 flex h-7 w-7 items-center justify-center rounded-full border border-slate-600 bg-slate-800 text-slate-300 transition hover:border-slate-400 hover:bg-slate-700 hover:text-white"
                   >
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" className="h-2.5 w-2.5">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" className="h-3.5 w-3.5">
                       <path d="M18 6L6 18M6 6l12 12" />
                     </svg>
                   </button>

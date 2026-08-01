@@ -320,6 +320,22 @@ export async function getUserLibraryPhotos() {
     }
 
     const normalizedPhotos = (photos || []).map(withNormalizedVisibility);
+    const photoIds = normalizedPhotos.map((photo) => photo.id);
+    let likeCountByPhoto = new Map();
+
+    if (photoIds.length > 0) {
+      const { data: likeRows, error: likeError } = await supabase
+        .from('photo_likes')
+        .select('photo_id')
+        .in('photo_id', photoIds);
+
+      if (!likeError) {
+        likeCountByPhoto = new Map();
+        (likeRows || []).forEach((row) => {
+          likeCountByPhoto.set(row.photo_id, (likeCountByPhoto.get(row.photo_id) || 0) + 1);
+        });
+      }
+    }
 
     // Generate signed URLs for private photos
     const photosWithUrls = await Promise.all(
@@ -330,6 +346,7 @@ export async function getUserLibraryPhotos() {
         return {
           ...photo,
           url: signedData?.signedUrl || null,
+          like_count: likeCountByPhoto.get(photo.id) || 0,
         };
       })
     );
@@ -367,10 +384,16 @@ export async function getUserLibraryPhotoById(photoId) {
       .from('user-photos')
       .createSignedUrl(photo.storage_path, 60 * 60);
 
+    const { count: likeCount } = await supabase
+      .from('photo_likes')
+      .select('id', { count: 'exact', head: true })
+      .eq('photo_id', photo.id);
+
     return {
       photo: {
         ...withNormalizedVisibility(photo),
         url: signedData?.signedUrl || null,
+        like_count: likeCount || 0,
       },
       error: null,
     };
