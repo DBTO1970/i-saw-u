@@ -5,6 +5,7 @@ import Link from 'next/link';
 import UserNav from '../../components/UserNav';
 import LibraryPhotoDeleteButton from '../../components/LibraryPhotoDeleteButton';
 import PhotoVisibilityToggle from '../../components/PhotoVisibilityToggle';
+import RecentFanPhotosFeed from '../../components/RecentFanPhotosFeed';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,23 +42,6 @@ function groupShowsByYear(shows) {
   return Array.from(grouped.entries())
     .map(([year, yearShows]) => [year, yearShows.sort((left, right) => String(right.show_date).localeCompare(String(left.show_date)))])
     .sort(([leftYear], [rightYear]) => Number(rightYear) - Number(leftYear));
-}
-
-function formatRecentFanPhotoTimestamp(timestamp) {
-  if (!timestamp) {
-    return 'recently';
-  }
-
-  const parsed = new Date(timestamp);
-  if (Number.isNaN(parsed.getTime())) {
-    return 'recently';
-  }
-
-  return parsed.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  });
 }
 
 export default async function LibraryPage() {
@@ -185,54 +169,11 @@ export default async function LibraryPage() {
 
         {/* Section 2: Recent Fan Photos */}
         <section className="space-y-4 pt-4 border-t border-slate-800">
-          <details open className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60">
-            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-left">
-              <div>
-                <h2 className="text-xl font-semibold text-white">Recent Fan Photos</h2>
-                <p className="text-xs text-slate-400">
-                    Public fan photos from other fans across all Phish shows
-                </p>
-              </div>
-              <span className="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-slate-300">
-                {recentFanPhotoShows.length} {recentFanPhotoShows.length === 1 ? 'show' : 'shows'}
-              </span>
-            </summary>
-            <div className="border-t border-slate-800 p-4">
-              {recentFanPhotoShowsError ? (
-                <div className="rounded-2xl border border-dashed border-slate-800 p-6 text-center text-sm text-slate-400">
-                  {recentFanPhotoShowsError}
-                </div>
-              ) : recentFanPhotoShows.length === 0 ? (
-                <div className="rounded-2xl border border-dashed border-slate-800 p-6 text-center text-sm text-slate-400">
-                  No public fan photos from other users yet.
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                  {recentFanPhotoShows.map((show) => (
-                    <Link
-                      key={show.show_date}
-                      href={`/library/show/${show.show_date}`}
-                      className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 transition-all hover:border-cyan-500/40"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-xs font-bold text-cyan-400">{show.show_date || 'Unknown date'}</p>
-                          <p className="text-base font-semibold text-white">{show.venue_name || 'Venue Unknown'}</p>
-                          {show.location ? <p className="text-xs text-slate-400">{show.location}</p> : null}
-                        </div>
-                        <span className="shrink-0 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-1 text-[11px] font-semibold text-cyan-200">
-                          +{show.new_public_photo_count} {show.new_public_photo_count === 1 ? 'photo' : 'photos'}
-                        </span>
-                      </div>
-                      <p className="mt-2 text-xs text-slate-400">
-                        Latest add: {formatRecentFanPhotoTimestamp(show.latest_public_photo_at)}
-                      </p>
-                    </Link>
-                  ))}
-                </div>
-              )}
-            </div>
-          </details>
+          <RecentFanPhotosFeed
+            shows={recentFanPhotoShows}
+            bookmarkedShowDates={(shows || []).map((s) => s.show_date).filter(Boolean)}
+            error={recentFanPhotoShowsError}
+          />
         </section>
 
         {/* Section 3: Bookmarked Shows */}
