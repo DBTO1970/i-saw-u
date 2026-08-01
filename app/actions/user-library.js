@@ -489,6 +489,94 @@ export async function getUserSavedShows() {
 }
 
 /**
+ * Fetch bookmarked shows that recently received public fan photos from other users.
+ */
+export async function getRecentFanPhotoShows(limit = 8) {
+  try {
+    const supabase = createClient();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+
+    if (userError || !user) {
+      return { shows: [], error: 'User not authenticated' };
+    }
+
+    const { data: savedShows, error: savedShowsError } = await supabase
+      .from('saved_shows')
+      .select('show_date, venue_name, location')
+      .eq('user_id', user.id);
+
+    if (savedShowsError) {
+      return { shows: [], error: savedShowsError.message };
+    }
+
+    const showDates = [...new Set((savedShows || []).map((show) => show.show_date).filter(Boolean))];
+    if (showDates.length === 0) {
+      return { shows: [], error: null };
+    }
+
+    const { data: photoRows, error: photoRowsError } = await supabase
+      .from('photos')
+      .select('*')
+      .in('matched_show_date', showDates)
+      .neq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (photoRowsError) {
+      return { shows: [], error: visibilitySchemaMissingMessage(photoRowsError) || photoRowsError.message };
+    }
+
+    const fanPhotoStatsByShowDate = new Map();
+    (photoRows || []).forEach((photoRow) => {
+      const normalizedPhoto = withNormalizedVisibility(photoRow);
+      if (!normalizedPhoto?.matched_show_date || normalizedPhoto.is_public !== true) {
+        return;
+      }
+
+      const currentStats = fanPhotoStatsByShowDate.get(normalizedPhoto.matched_show_date) || {
+        new_public_photo_count: 0,
+        latest_public_photo_at: null,
+      };
+
+      currentStats.new_public_photo_count += 1;
+      if (
+        normalizedPhoto.created_at &&
+        (!currentStats.latest_public_photo_at || normalizedPhoto.created_at > currentStats.latest_public_photo_at)
+      ) {
+        currentStats.latest_public_photo_at = normalizedPhoto.created_at;
+      }
+
+      fanPhotoStatsByShowDate.set(normalizedPhoto.matched_show_date, currentStats);
+    });
+
+    const normalizedLimit = Number.isFinite(Number(limit))
+      ? Math.max(1, Math.floor(Number(limit)))
+      : 8;
+
+    const recentShows = (savedShows || [])
+      .map((show) => {
+        const stats = fanPhotoStatsByShowDate.get(show.show_date);
+        if (!stats) {
+          return null;
+        }
+
+        return {
+          ...show,
+          ...stats,
+        };
+      })
+      .filter(Boolean)
+      .sort((left, right) =>
+        String(right.latest_public_photo_at || '').localeCompare(String(left.latest_public_photo_at || ''))
+      )
+      .slice(0, normalizedLimit);
+
+    return { shows: recentShows, error: null };
+  } catch (error) {
+    return { shows: [], error: error.message };
+  }
+}
+
+/**
  * Fetch a single saved show by show_date for the current user.
  */
 export async function getUserSavedShowByDate(showDate) {

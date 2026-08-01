@@ -81,4 +81,5 @@ i-saw-u is a Next.js web app for exploring concert and event photos by matching 
 - If you plan to contribute, please keep changes focused and document any new environment variables.
 
 ## License
-open-source license - MIT.
+
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
