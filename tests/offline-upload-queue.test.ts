@@ -230,4 +230,54 @@ describe('OfflineUploadQueueManager', () => {
     expect(tasks[0].localAssetId).toBe('asset-123');
     expect(tasks[0].localFileUri).toBeNull();
   });
+
+  it('can retry and clear failed queue items', async () => {
+    const storage = createMemoryStorage();
+    const runtimeHarness = createRuntime();
+    runtimeHarness.goOffline();
+
+    const manager = new OfflineUploadQueueManager({
+      storage,
+      runtime: runtimeHarness.runtime,
+      storageKey: 'test-queue-retry-clear-failed',
+      maxAttempts: 1,
+    });
+
+    manager.addTask({
+      localAssetId: 'asset-failed',
+      fileName: 'failed.jpg',
+      mimeType: 'image/jpeg',
+      exifMetadata: {
+        rawDateTimeOriginal: null,
+        dateTimeOriginal: null,
+        timeTaken: null,
+        gpsLatitude: null,
+        gpsLongitude: null,
+        gpsLatitudeRef: null,
+        gpsLongitudeRef: null,
+        cameraModel: null,
+      },
+    });
+
+    runtimeHarness.goOnline();
+    await manager.processPendingTasks(async () => {
+      throw new Error('forced failure');
+    });
+
+    let failedTask = manager.getTasks()[0];
+    expect(failedTask.status).toBe('failed');
+
+    manager.retryFailedTasks();
+    failedTask = manager.getTasks()[0];
+    expect(failedTask.status).toBe('pending');
+    expect(failedTask.attemptCount).toBe(0);
+
+    await manager.processPendingTasks(async () => {
+      throw new Error('forced failure');
+    });
+    expect(manager.getTasks()[0].status).toBe('failed');
+
+    manager.clearFailedTasks();
+    expect(manager.getTasks()).toHaveLength(0);
+  });
 });

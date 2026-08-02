@@ -7,6 +7,9 @@ export type OfflineUploadTask = {
   localFileUri?: string | null;
   localAssetId?: string | null;
   exifMetadata: CleanPhotoExif;
+  matchedShowDate?: string | null;
+  showStartTime?: string | null;
+  showData?: Record<string, unknown> | null;
   fileName: string;
   mimeType: string;
   createdAt: string;
@@ -21,6 +24,9 @@ export type AddOfflineUploadTaskInput = {
   localFileUri?: string | null;
   localAssetId?: string | null;
   exifMetadata: CleanPhotoExif;
+  matchedShowDate?: string | null;
+  showStartTime?: string | null;
+  showData?: Record<string, unknown> | null;
   fileName?: string;
   mimeType?: string;
 };
@@ -184,6 +190,9 @@ export class OfflineUploadQueueManager {
       localFileUri: input.localFileUri || null,
       localAssetId: input.localAssetId || null,
       exifMetadata: input.exifMetadata,
+      matchedShowDate: input.matchedShowDate || null,
+      showStartTime: input.showStartTime || null,
+      showData: input.showData || null,
       fileName: input.fileName || 'camera-photo.jpg',
       mimeType: input.mimeType || 'image/jpeg',
       createdAt: nowIso,
@@ -263,6 +272,32 @@ export class OfflineUploadQueueManager {
     })();
 
     return this.processingPromise;
+  }
+
+  retryFailedTasks() {
+    const now = this.runtime.now();
+    const nowIso = new Date(now).toISOString();
+    this.tasks = this.tasks.map((task) => {
+      if (task.status !== 'failed') {
+        return task;
+      }
+      return {
+        ...task,
+        status: 'pending',
+        attemptCount: 0,
+        nextAttemptAt: now,
+        updatedAt: nowIso,
+      };
+    });
+    this.persistAndNotify();
+    if (this.runtime.isOnline() && this.processor) {
+      void this.processPendingTasks();
+    }
+  }
+
+  clearFailedTasks() {
+    this.tasks = this.tasks.filter((task) => task.status !== 'failed');
+    this.persistAndNotify();
   }
 
   private findNextReadyTask() {

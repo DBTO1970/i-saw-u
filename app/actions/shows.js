@@ -15,6 +15,7 @@ const PHISH_SHOW_INDEX_LIMIT = 5000;
 const PHISH_SHOW_INDEX_TTL_MS = 10 * 60 * 1000;
 const MAX_LOCATION_MATCHES = 20;
 const MAX_AUTOCOMPLETE_SUGGESTIONS = 12;
+const MAX_LIVE_MODE_SHOW_SEARCH_MATCHES = 12;
 
 let phishShowsCache = null;
 let phishShowsCacheUpdatedAt = 0;
@@ -801,6 +802,73 @@ export async function getPhishInShowLinks({ dateString, songTitle } = {}) {
       songTitle: null,
       audioStatus: null,
       error: 'Unable to load Phish.in links right now.',
+    };
+  }
+}
+
+export async function searchLiveModeShowsByQuery(queryText) {
+  const query = normalizeSearchToken(queryText);
+  if (query.length < 2) {
+    return {
+      matches: [],
+      error: 'Enter at least 2 characters to search for a show.',
+    };
+  }
+
+  const apiKey = process.env.PHISHNET_API_KEY;
+  if (!apiKey) {
+    return {
+      matches: [],
+      error: 'The PHISHNET_API_KEY environment variable is not configured.',
+    };
+  }
+
+  try {
+    const rows = await fetchAllPhishShows(apiKey);
+    const scoredMatches = rows
+      .map((row) => {
+        const show = buildShowFromRecord(row, normalizeText(row?.showdate));
+        const venueToken = normalizeSearchToken(show.venueName);
+        const cityToken = normalizeSearchToken(show.city);
+        const stateToken = normalizeSearchToken(show.state);
+        const dateToken = normalizeSearchToken(show.date);
+        const combinedToken = normalizeSearchToken(`${show.date} ${show.venueName} ${show.city} ${show.state}`);
+
+        const score = (
+          scoreAutocompleteCandidate(query, venueToken) * 3
+          + scoreAutocompleteCandidate(query, cityToken) * 2
+          + scoreAutocompleteCandidate(query, stateToken)
+          + scoreAutocompleteCandidate(query, dateToken) * 2
+          + scoreAutocompleteCandidate(query, combinedToken)
+        );
+
+        if (score <= 0) {
+          return null;
+        }
+
+        return {
+          ...show,
+          matchScore: score,
+        };
+      })
+      .filter(Boolean)
+      .sort((left, right) => {
+        if (right.matchScore !== left.matchScore) {
+          return right.matchScore - left.matchScore;
+        }
+        return right.date.localeCompare(left.date);
+      })
+      .slice(0, MAX_LIVE_MODE_SHOW_SEARCH_MATCHES);
+
+    return {
+      matches: scoredMatches,
+      error: scoredMatches.length > 0 ? null : 'No shows matched that search.',
+    };
+  } catch (error) {
+    console.error('Failed to search live mode shows:', error);
+    return {
+      matches: [],
+      error: 'Unable to search shows right now.',
     };
   }
 }

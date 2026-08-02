@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { convertToAdaptiveWebP } from '../lib/image-optimizer';
 import { capturePhotoWithNativeCamera } from '../lib/native-camera-photo';
 import { extractExifFromLocalImageUri } from '../lib/local-image-exif';
+import { searchLiveModeShowsByQuery } from '../app/actions/shows';
 import { createClient as createSupabaseClient } from '../lib/supabase/client';
 import { sendClientDiagnostic, withClientDiagnosticError } from '../lib/client-diagnostics';
 import { deleteLivePhotoAsset, readLivePhotoAssetBlob, saveLivePhotoAsset } from '../lib/local-photo-store';
@@ -14,6 +15,18 @@ import {
 } from '../lib/offline-upload-queue';
 
 const LIVE_MODE_STORAGE_KEY = 'liveModeEnabledV1';
+
+type LiveModeSessionShow = {
+  date: string;
+  venueName: string;
+  city: string;
+  state: string;
+  phishNetUrl: string;
+  latitude: number | null;
+  longitude: number | null;
+  setlistNotes: string;
+  setlist: Array<unknown>;
+};
 
 async function uploadQueuedPhoto(task: OfflineUploadTask): Promise<void> {
   const baseDetails = {
@@ -32,11 +45,18 @@ async function uploadQueuedPhoto(task: OfflineUploadTask): Promise<void> {
       }
     }
     if (!localBlob && task.localFileUri) {
-      const localResponse = await fetch(task.localFileUri);
-      if (!localResponse.ok) {
-        throw new Error(`Unable to load queued local photo URI (status ${localResponse.status}).`);
+      try {
+        const localResponse = await fetch(task.localFileUri);
+        if (!localResponse.ok) {
+          throw new Error(`Unable to load queued local photo URI (status ${localResponse.status}).`);
+        }
+        localBlob = await localResponse.blob();
+      } catch (error) {
+        if (task.localFileUri.startsWith('blob:')) {
+          throw new Error('This queued item references an expired local blob URL. Retry may fail; use "Clear Failed" for stale items and capture again.');
+        }
+        throw error;
       }
-      localBlob = await localResponse.blob();
     }
     if (!localBlob) {
       throw new Error('No local live photo data is available for this queued task.');
@@ -74,6 +94,12 @@ async function uploadQueuedPhoto(task: OfflineUploadTask): Promise<void> {
     formData.append('fileName', task.fileName || originalName);
     formData.append('dateTaken', task.exifMetadata.dateTimeOriginal || '');
     formData.append('timeTaken', task.exifMetadata.timeTaken || '');
+    if (task.matchedShowDate) {
+      formData.append('matchedShowDate', task.matchedShowDate);
+    }
+    if (task.showStartTime) {
+      formData.append('showStartTime', task.showStartTime);
+    }
 
     if (task.exifMetadata.gpsLatitude != null) {
       formData.append('gpsLatitude', String(task.exifMetadata.gpsLatitude));
@@ -94,6 +120,14 @@ async function uploadQueuedPhoto(task: OfflineUploadTask): Promise<void> {
           appliedQuality,
           appliedMaxWidth,
           appliedMaxHeight,
+        },
+        showMetadata: {
+          matchedShowDate: task.matchedShowDate || null,
+          showStartTime: task.showStartTime || null,
+          venueName: typeof task.showData?.venueName === 'string' ? task.showData.venueName : null,
+          city: typeof task.showData?.city === 'string' ? task.showData.city : null,
+          state: typeof task.showData?.state === 'string' ? task.showData.state : null,
+          showData: task.showData || null,
         },
       }),
     );
@@ -121,6 +155,7 @@ async function uploadQueuedPhoto(task: OfflineUploadTask): Promise<void> {
         ...baseDetails,
         hasLocalAssetId: Boolean(task.localAssetId),
         hasLocalFileUri: Boolean(task.localFileUri),
+        hasShowSession: Boolean(task.matchedShowDate),
       },
       error: withClientDiagnosticError(error),
     });
@@ -138,6 +173,12 @@ export default function LiveModeController() {
   const [statusMessage, setStatusMessage] = useState('');
   const [queueErrorSummary, setQueueErrorSummary] = useState('');
   const [latestCapturedPhotoForDeviceSave, setLatestCapturedPhotoForDeviceSave] = useState<File | null>(null);
+  const [liveModeShowQuery, setLiveModeShowQuery] = useState('');
+  const [isSearchingShows, setIsSearchingShows] = useState(false);
+  const [showSearchMessage, setShowSearchMessage] = useState('');
+  const [showSearchResults, setShowSearchResults] = useState<LiveModeSessionShow[]>([]);
+  const [selectedLiveModeShow, setSelectedLiveModeShow] = useState<LiveModeSessionShow | null>(null);
+  const [liveModeShowStartTime, setLiveModeShowStartTime] = useState('19:30');
 
   useEffect(() => {
     const manager = createOfflineUploadQueueManager();
@@ -230,6 +271,9 @@ export default function LiveModeController() {
       queueManager.addTask({
         localAssetId,
         exifMetadata,
+        matchedShowDate: selectedLiveModeShow?.date || null,
+        showStartTime: liveModeShowStartTime || null,
+        showData: selectedLiveModeShow || null,
         fileName: capturedPhoto.file.name || 'live-mode-photo.jpg',
         mimeType: capturedPhoto.file.type || 'image/jpeg',
       });
@@ -250,7 +294,7 @@ export default function LiveModeController() {
     } finally {
       setIsCapturing(false);
     }
-  }, [isLiveModeEnabled, queueManager]);
+  }, [isLiveModeEnabled, queueManager, selectedLiveModeShow, liveModeShowStartTime]);
 
   const handleProcessQueueNow = useCallback(async () => {
     if (!queueManager) {
@@ -258,19 +302,63 @@ export default function LiveModeController() {
       return;
     }
 
-    setStatusMessage('Processing queued uploads...');
-    await queueManager.processPendingTasks();
-    const nextStats = queueManager.getStats();
-    if (nextStats.pending === 0 && nextStats.failed === 0) {
-      setStatusMessage('All queued uploads are processed.');
-      return;
+    try {
+      setStatusMessage('Processing queued uploads...');
+      await queueManager.processPendingTasks();
+      const nextStats = queueManager.getStats();
+      if (nextStats.pending === 0 && nextStats.failed === 0) {
+        setStatusMessage('All queued uploads are processed.');
+        return;
+      }
+      if (nextStats.failed > 0) {
+        setStatusMessage('Some uploads failed. Check status below and retry when ready.');
+        return;
+      }
+      setStatusMessage('Uploads are queued for retry.');
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : 'Unable to process queued uploads.');
     }
-    if (nextStats.failed > 0) {
-      setStatusMessage('Some uploads failed. Check status below and retry when ready.');
-      return;
-    }
-    setStatusMessage('Uploads are queued for retry.');
   }, [queueManager]);
+
+  const handleRetryFailedQueueItems = useCallback(async () => {
+    if (!queueManager) {
+      return;
+    }
+    queueManager.retryFailedTasks();
+    setStatusMessage('Retrying failed queue items now...');
+    await queueManager.processPendingTasks();
+  }, [queueManager]);
+
+  const handleClearFailedQueueItems = useCallback(() => {
+    if (!queueManager) {
+      return;
+    }
+    queueManager.clearFailedTasks();
+    setStatusMessage('Failed queue items were removed.');
+  }, [queueManager]);
+
+  const handleSearchLiveModeShows = useCallback(async () => {
+    const query = liveModeShowQuery.trim();
+    if (query.length < 2) {
+      setShowSearchMessage('Enter at least 2 characters to search for a show.');
+      setShowSearchResults([]);
+      return;
+    }
+
+    setIsSearchingShows(true);
+    setShowSearchMessage('Searching Phish.net shows...');
+    try {
+      const result = await searchLiveModeShowsByQuery(query);
+      const matches = Array.isArray(result?.matches) ? result.matches : [];
+      setShowSearchResults(matches as LiveModeSessionShow[]);
+      setShowSearchMessage(result?.error || (matches.length > 0 ? '' : 'No shows matched that search.'));
+    } catch (error) {
+      setShowSearchResults([]);
+      setShowSearchMessage(error instanceof Error ? error.message : 'Unable to search shows right now.');
+    } finally {
+      setIsSearchingShows(false);
+    }
+  }, [liveModeShowQuery]);
 
   const handleSaveLatestPhotoToDevice = useCallback(async () => {
     if (!latestCapturedPhotoForDeviceSave) {
@@ -339,6 +427,64 @@ export default function LiveModeController() {
         </span>
       </div>
 
+      <div className="mt-3 rounded-xl border border-cyan-400/30 bg-slate-950/40 p-3">
+        <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">Live Mode session show</p>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <input
+            type="text"
+            value={liveModeShowQuery}
+            onChange={(event) => setLiveModeShowQuery(event.target.value)}
+            placeholder="Search by venue, city, state, or date"
+            className="min-w-[220px] flex-1 rounded-lg border border-cyan-400/40 bg-slate-900 px-3 py-2 text-sm text-cyan-100 placeholder:text-cyan-200/50 focus:border-cyan-300 focus:outline-none"
+          />
+          <button
+            type="button"
+            onClick={handleSearchLiveModeShows}
+            disabled={isSearchingShows}
+            className="rounded-lg border border-cyan-400/50 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {isSearchingShows ? 'Searching...' : 'Find show'}
+          </button>
+          <input
+            type="time"
+            value={liveModeShowStartTime}
+            onChange={(event) => setLiveModeShowStartTime(event.target.value)}
+            className="rounded-lg border border-cyan-400/40 bg-slate-900 px-3 py-2 text-sm text-cyan-100 focus:border-cyan-300 focus:outline-none"
+            aria-label="Live mode show start time"
+          />
+        </div>
+        {selectedLiveModeShow ? (
+          <p className="mt-2 text-xs text-emerald-200">
+            Selected: {selectedLiveModeShow.date} • {selectedLiveModeShow.venueName} ({[selectedLiveModeShow.city, selectedLiveModeShow.state].filter(Boolean).join(', ')})
+          </p>
+        ) : (
+          <p className="mt-2 text-xs text-cyan-100/80">No session show selected yet. Photos will save without matched show metadata.</p>
+        )}
+        {showSearchMessage ? (
+          <p className="mt-2 text-xs text-amber-200">{showSearchMessage}</p>
+        ) : null}
+        {showSearchResults.length > 0 ? (
+          <ul className="mt-2 space-y-2">
+            {showSearchResults.map((show) => (
+              <li key={`${show.date}-${show.venueName}-${show.city}-${show.state}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-xs text-cyan-100">
+                <span>{show.date} • {show.venueName} • {[show.city, show.state].filter(Boolean).join(', ')}</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedLiveModeShow(show);
+                    setShowSearchResults([]);
+                    setShowSearchMessage(`Using "${show.venueName}" on ${show.date} for this live session.`);
+                  }}
+                  className="rounded-md border border-emerald-400/60 px-2 py-1 font-semibold text-emerald-200 transition hover:bg-emerald-500/20"
+                >
+                  Use show
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <button
           type="button"
@@ -355,6 +501,22 @@ export default function LiveModeController() {
           className="rounded-xl border border-cyan-400/50 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {queueStats.processing > 0 ? 'Processing...' : 'Process Queue Now'}
+        </button>
+        <button
+          type="button"
+          disabled={!queueManager || queueStats.failed === 0 || queueStats.processing > 0}
+          onClick={handleRetryFailedQueueItems}
+          className="rounded-xl border border-amber-400/50 px-4 py-2 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Retry Failed
+        </button>
+        <button
+          type="button"
+          disabled={!queueManager || queueStats.failed === 0 || queueStats.processing > 0}
+          onClick={handleClearFailedQueueItems}
+          className="rounded-xl border border-rose-400/50 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Clear Failed
         </button>
         <button
           type="button"
