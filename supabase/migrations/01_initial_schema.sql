@@ -25,7 +25,7 @@ BEGIN
   INSERT INTO public.profiles (id, username, avatar_url)
   VALUES (
     new.id, 
-    COALESCE(new.raw_user_meta_data->>'full_name', new.raw_user_meta_data->>'name', new.raw_user_meta_data->>'user_name', new.email),
+    CONCAT('fan_', SUBSTRING(REPLACE(new.id::text, '-', '') FROM 1 FOR 12)),
     new.raw_user_meta_data->>'avatar_url'
   )
   ON CONFLICT (id) DO NOTHING;

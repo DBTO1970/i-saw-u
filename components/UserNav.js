@@ -44,7 +44,19 @@ export default function UserNav() {
         .select('*')
         .eq('id', nextUser.id)
         .single();
-      setProfile(data || null);
+      let ensuredProfile = data || null;
+      try {
+        const identityResponse = await fetch('/api/profile/ensure-generated-identity', { method: 'POST' });
+        if (identityResponse.ok) {
+          const payload = await identityResponse.json();
+          if (payload?.success && payload?.profile) {
+            ensuredProfile = payload.profile;
+          }
+        }
+      } catch (error) {
+        console.error('Unable to ensure generated profile identity:', error);
+      }
+      setProfile(ensuredProfile);
       setProfileLoaded(true);
       setLoading(false);
     }
@@ -179,7 +191,8 @@ export default function UserNav() {
   }
 
   const avatarUrl = profile?.avatar_url || user.user_metadata?.avatar_url;
-  const username = profile?.username || user.user_metadata?.full_name || user.email;
+  const displayName = profile?.display_name || profile?.username || 'Fan';
+  const username = profile?.username ? `@${profile.username}` : user.email;
   const hasAcceptedTerms = Boolean(profile?.terms_accepted_at) && profile?.terms_accepted_version === TERMS_VERSION;
   const mustAcceptTerms = Boolean(user && profileLoaded && !hasAcceptedTerms);
 
@@ -202,7 +215,7 @@ export default function UserNav() {
           className="flex max-w-[220px] items-center space-x-2 rounded-full border border-slate-800 bg-slate-900/90 p-1 pl-3"
         >
           <span className="max-w-[110px] truncate text-xs font-medium text-slate-300 sm:max-w-[160px]">
-            {username}
+            {displayName}
           </span>
 
           {avatarUrl ? (
@@ -218,7 +231,7 @@ export default function UserNav() {
           <div className="absolute right-0 z-40 mt-2 w-[min(60vw,20rem)] rounded-2xl border border-slate-800 bg-slate-950/95 p-3 shadow-2xl shadow-black/50 sm:w-80">
             <div className="mb-3 flex items-center justify-between gap-2 border-b border-slate-800 pb-3">
               <div>
-                <p className="text-sm font-semibold text-white">Account</p>
+                <p className="text-sm font-semibold text-white">{displayName}</p>
                 <p className="text-xs text-slate-400">{username}</p>
               </div>
               <button

@@ -33,8 +33,8 @@ BEGIN
   INSERT INTO public.profiles (id, username, display_name, avatar_url)
   VALUES (
     NEW.id,
-    COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', NEW.raw_user_meta_data->>'user_name', NEW.email),
-    COALESCE(NEW.raw_user_meta_data->>'full_name', NEW.raw_user_meta_data->>'name', NEW.raw_user_meta_data->>'user_name', NEW.email),
+    CONCAT('fan_', SUBSTRING(REPLACE(NEW.id::text, '-', '') FROM 1 FOR 12)),
+    CONCAT('Fan ', UPPER(SUBSTRING(REPLACE(NEW.id::text, '-', '') FROM 1 FOR 4))),
     NEW.raw_user_meta_data->>'avatar_url'
   )
   ON CONFLICT (id) DO NOTHING;
