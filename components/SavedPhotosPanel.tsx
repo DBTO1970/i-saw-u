@@ -26,11 +26,11 @@ export default function SavedPhotosPanel({ photos, photosError }: SavedPhotosPan
     [photos],
   );
 
-  const { sortedData, SortControlComponent } = useSortedList(mappedPhotos, 'showDate');
+  const { sortedData, sortBy, SortControlComponent } = useSortedList(mappedPhotos, 'showDate');
 
   const groupedSavedPhotos = useMemo(
-    () => groupPhotosByYearAndShow(sortedData),
-    [sortedData],
+    () => (sortBy === 'dateSaved' ? [] : groupPhotosByYearAndShow(sortedData)),
+    [sortedData, sortBy],
   );
 
   const defaultSavedPhotosYear = groupedSavedPhotos[0]?.year || null;
@@ -43,10 +43,53 @@ export default function SavedPhotosPanel({ photos, photosError }: SavedPhotosPan
     );
   }
 
-  if (groupedSavedPhotos.length === 0) {
+  if (sortedData.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-slate-800 p-8 text-center text-slate-400">
         No saved photos yet. Upload a photo on the home page and click &quot;Save to Library&quot;.
+      </div>
+    );
+  }
+
+  const renderPhotoCard = (photo: Record<string, unknown>) => (
+    <div key={photo.id as string} className="group relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60 p-4 transition-all hover:border-cyan-500/40">
+      <Link href={`/library/photo/${photo.id as string}`} className="block">
+        {photo.url ? (
+          <div className="relative mb-3 aspect-video w-full overflow-hidden rounded-xl bg-slate-900">
+            <img src={photo.url as string} alt={photo.file_name as string} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+          </div>
+        ) : (
+          <div className="mb-3 flex aspect-video w-full items-center justify-center rounded-xl bg-slate-900 text-xs text-slate-500">
+            Photo unavailable
+          </div>
+        )}
+        <div className="space-y-1 text-xs text-slate-300">
+          <p className="truncate font-semibold text-white">{photo.file_name as string}</p>
+          <p className="truncate text-slate-400">Current song: {(photo.currentSong as string) || 'Unknown'}</p>
+          {photo.timeContextLabel ? <p className="truncate text-slate-500">Context: {photo.timeContextLabel as string}</p> : null}
+        </div>
+      </Link>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-3">
+        <PhotoVisibilityToggle photoId={photo.id as string} initialIsPublic={!!photo.is_public} />
+        <LibraryPhotoDeleteButton
+          photoId={photo.id as string}
+          storagePath={photo.storage_path as string}
+          label="Delete photo"
+          className="rounded-lg border border-red-500/50 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-200 transition hover:bg-red-500/20 disabled:opacity-60"
+        />
+      </div>
+    </div>
+  );
+
+  if (sortBy === 'dateSaved') {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-end">
+          {SortControlComponent}
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {sortedData.map((photo) => renderPhotoCard(photo as Record<string, unknown>))}
+        </div>
       </div>
     );
   }
@@ -87,35 +130,7 @@ export default function SavedPhotosPanel({ photos, photosError }: SavedPhotosPan
                   ) : null}
                 </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {group.photos.map((photo: Record<string, unknown>) => (
-                    <div key={photo.id as string} className="group relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60 p-4 transition-all hover:border-cyan-500/40">
-                      <Link href={`/library/photo/${photo.id as string}`} className="block">
-                        {photo.url ? (
-                          <div className="relative mb-3 aspect-video w-full overflow-hidden rounded-xl bg-slate-900">
-                            <img src={photo.url as string} alt={photo.file_name as string} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
-                          </div>
-                        ) : (
-                          <div className="mb-3 flex aspect-video w-full items-center justify-center rounded-xl bg-slate-900 text-xs text-slate-500">
-                            Photo unavailable
-                          </div>
-                        )}
-                        <div className="space-y-1 text-xs text-slate-300">
-                          <p className="truncate font-semibold text-white">{photo.file_name as string}</p>
-                          <p className="truncate text-slate-400">Current song: {(photo.currentSong as string) || 'Unknown'}</p>
-                          {photo.timeContextLabel ? <p className="truncate text-slate-500">Context: {photo.timeContextLabel as string}</p> : null}
-                        </div>
-                      </Link>
-                      <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-3">
-                        <PhotoVisibilityToggle photoId={photo.id as string} initialIsPublic={!!photo.is_public} />
-                        <LibraryPhotoDeleteButton
-                          photoId={photo.id as string}
-                          storagePath={photo.storage_path as string}
-                          label="Delete photo"
-                          className="rounded-lg border border-red-500/50 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-200 transition hover:bg-red-500/20 disabled:opacity-60"
-                        />
-                      </div>
-                    </div>
-                  ))}
+                  {group.photos.map((photo: Record<string, unknown>) => renderPhotoCard(photo))}
                 </div>
               </div>
             ))}
