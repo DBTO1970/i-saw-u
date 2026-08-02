@@ -66,3 +66,106 @@ export async function sendClientDiagnostic(payload: ClientDiagnosticPayload): Pr
 export function withClientDiagnosticError(error: unknown): ClientDiagnosticPayload['error'] {
   return toSerializableError(error);
 }
+
+type GlobalDiagnosticsState = {
+  refCount: number;
+  contexts: Set<string>;
+  errorHandler: (event: ErrorEvent) => void;
+  rejectionHandler: (event: PromiseRejectionEvent) => void;
+};
+
+const GLOBAL_DIAGNOSTICS_KEY = '__ISAWU_GLOBAL_DIAGNOSTICS__';
+
+function readGlobalState(): GlobalDiagnosticsState | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  return (window as unknown as Record<string, unknown>)[GLOBAL_DIAGNOSTICS_KEY] as GlobalDiagnosticsState || null;
+}
+
+function writeGlobalState(state: GlobalDiagnosticsState | null) {
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const target = window as unknown as Record<string, unknown>;
+  if (!state) {
+    delete target[GLOBAL_DIAGNOSTICS_KEY];
+    return;
+  }
+  target[GLOBAL_DIAGNOSTICS_KEY] = state;
+}
+
+export function installGlobalClientDiagnostics(context: string): () => void {
+  if (typeof window === 'undefined') {
+    return () => {};
+  }
+
+  let state = readGlobalState();
+  if (!state) {
+    state = {
+      refCount: 0,
+      contexts: new Set<string>(),
+      errorHandler: (event: ErrorEvent) => {
+        const errorPayload = event.error
+          ? withClientDiagnosticError(event.error)
+          : withClientDiagnosticError(event.message || 'Unknown window error');
+        void sendClientDiagnostic({
+          event: 'window-error',
+          severity: 'error',
+          source: 'global-window-error',
+          details: {
+            contexts: Array.from(readGlobalState()?.contexts || []),
+            message: event.message || null,
+            filename: event.filename || null,
+            line: typeof event.lineno === 'number' ? event.lineno : null,
+            column: typeof event.colno === 'number' ? event.colno : null,
+            pathname: window.location?.pathname || null,
+            href: window.location?.href || null,
+          },
+          error: errorPayload,
+        });
+      },
+      rejectionHandler: (event: PromiseRejectionEvent) => {
+        const reason = event.reason;
+        void sendClientDiagnostic({
+          event: 'window-unhandledrejection',
+          severity: 'error',
+          source: 'global-window-error',
+          details: {
+            contexts: Array.from(readGlobalState()?.contexts || []),
+            pathname: window.location?.pathname || null,
+            href: window.location?.href || null,
+            reasonType: reason == null ? null : typeof reason,
+          },
+          error: withClientDiagnosticError(reason),
+        });
+      },
+    };
+
+    window.addEventListener('error', state.errorHandler);
+    window.addEventListener('unhandledrejection', state.rejectionHandler);
+    writeGlobalState(state);
+  }
+
+  state.refCount += 1;
+  state.contexts.add(context);
+  writeGlobalState(state);
+
+  return () => {
+    const current = readGlobalState();
+    if (!current) {
+      return;
+    }
+
+    current.refCount = Math.max(0, current.refCount - 1);
+    current.contexts.delete(context);
+    if (current.refCount === 0) {
+      window.removeEventListener('error', current.errorHandler);
+      window.removeEventListener('unhandledrejection', current.rejectionHandler);
+      writeGlobalState(null);
+      return;
+    }
+    writeGlobalState(current);
+  };
+}

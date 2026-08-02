@@ -5,6 +5,7 @@ import { getShowByDate, searchLocationAutocomplete, searchShowsByLocation } from
 import ImageExifUploader from './ImageExifUploader';
 import ShowMatchCard from './ShowMatchCard';
 import LiveModeController from './LiveModeController';
+import { installGlobalClientDiagnostics } from '../lib/client-diagnostics';
 
 function extractDateFromMetadata(metadata) {
   if (!metadata || typeof metadata !== 'object') {
@@ -279,6 +280,10 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
   const supplementalSectionRef = useRef(null);
   const supplementalVenueInputRef = useRef(null);
   const suppressMissingDateMessageRef = useRef(false);
+
+  useEffect(() => {
+    return installGlobalClientDiagnostics('show-match-panel');
+  }, []);
 
   const embeddedLat = parseCoordinateNumber(photoMetadata?.rawGpsLatitude);
   const embeddedLon = parseCoordinateNumber(photoMetadata?.rawGpsLongitude);
