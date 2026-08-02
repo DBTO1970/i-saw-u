@@ -132,6 +132,16 @@ function logSavePipelineDiagnostic(stage, file, details = {}, error = null) {
   });
 }
 
+async function computeBlobSha256Hex(blob) {
+  if (!globalThis.crypto?.subtle) {
+    throw new Error('Your browser does not support secure hashing required for duplicate detection.');
+  }
+  const arrayBuffer = await blob.arrayBuffer();
+  const digest = await crypto.subtle.digest('SHA-256', arrayBuffer);
+  const digestBytes = new Uint8Array(digest);
+  return Array.from(digestBytes).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 async function parseSaveResponse(response) {
   const contentType = response.headers.get('content-type') || '';
   if (contentType.includes('application/json')) {
@@ -745,6 +755,7 @@ export default function ImageExifUploader({
       let appliedQuality = 0.85;
       let appliedMaxWidth = 1920;
       let appliedMaxHeight = 1920;
+      let photoHash = '';
       try {
         // 1. Client-side WebP optimization
         const converted = await convertToAdaptiveWebP(sourceFile, {
@@ -757,6 +768,7 @@ export default function ImageExifUploader({
         appliedQuality = converted.appliedQuality;
         appliedMaxWidth = converted.appliedMaxWidth;
         appliedMaxHeight = converted.appliedMaxHeight;
+        photoHash = await computeBlobSha256Hex(webpBlob);
       } catch (convertError) {
         logSavePipelineDiagnostic('convert-failed', sourceFile, {
           maxWidth: 1920,
@@ -799,6 +811,7 @@ export default function ImageExifUploader({
         formData.append('storagePath', storagePath);
         formData.append('fileSize', String(webpBlob.size));
         formData.append('mimeType', 'image/webp');
+        formData.append('photoHash', photoHash);
         formData.append('fileName', selectedFileName || originalName);
         formData.append('dateTaken', metadata.dateTimeOriginal || '');
         formData.append('timeTaken', metadata.timeTaken || '');

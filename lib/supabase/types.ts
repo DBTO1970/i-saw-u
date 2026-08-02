@@ -51,6 +51,7 @@ export interface Database {
           gps_latitude: number | null;
           gps_longitude: number | null;
           raw_exif: Json;
+          photo_hash: string | null;
           matched_show_date: string | null;
           show_start_time: string | null;
           is_public: boolean;
@@ -68,6 +69,7 @@ export interface Database {
           gps_latitude?: number | null;
           gps_longitude?: number | null;
           raw_exif?: Json;
+          photo_hash?: string | null;
           matched_show_date?: string | null;
           show_start_time?: string | null;
           is_public?: boolean;
@@ -85,6 +87,7 @@ export interface Database {
           gps_latitude?: number | null;
           gps_longitude?: number | null;
           raw_exif?: Json;
+          photo_hash?: string | null;
           matched_show_date?: string | null;
           show_start_time?: string | null;
           is_public?: boolean;

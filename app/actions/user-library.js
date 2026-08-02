@@ -1,6 +1,7 @@
 'use server';
 
 import { createClient } from '../../lib/supabase/server';
+import { createHash } from 'crypto';
 
 function toObjectOrEmpty(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -109,6 +110,42 @@ function visibilitySchemaMissingMessage(error) {
   return null;
 }
 
+function normalizePhotoHash(value) {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(normalized)) {
+    return null;
+  }
+  return normalized;
+}
+
+function isPhotoHashDuplicateError(error) {
+  const code = error?.code || '';
+  const message = String(error?.message || '').toLowerCase();
+  return (
+    code === '23505' && (
+      message.includes('idx_photos_user_photo_hash_unique') ||
+      message.includes('(user_id, photo_hash)')
+    )
+  );
+}
+
+async function removeStorageObjectSafely(supabase, storagePath) {
+  if (!storagePath) {
+    return;
+  }
+  try {
+    await supabase.storage.from('user-photos').remove([storagePath]);
+  } catch (error) {
+    console.error('Storage cleanup failed after photo save error:', {
+      storagePath,
+      error,
+    });
+  }
+}
+
 /**
  * Save photo & metadata to user library and Supabase Storage
  */
@@ -134,6 +171,7 @@ export async function savePhotoToLibrary(formData) {
       : null;
     const rawExifJson = formData.get('rawExif') || '{}';
     const parsedRawExif = applyShowMetadata(JSON.parse(rawExifJson), matchedShowDate, showStartTime);
+    const submittedPhotoHash = normalizePhotoHash(formData.get('photoHash'));
     const directStoragePath = formData.get('storagePath');
     const directPhotoId = formData.get('photoId');
     const directMimeType = formData.get('mimeType');
@@ -152,6 +190,7 @@ export async function savePhotoToLibrary(formData) {
       ? directMimeType.trim()
       : 'image/webp';
     let fileSize = null;
+    let photoHash = submittedPhotoHash;
 
     if (!storagePath.startsWith(`${user.id}/`)) {
       return { success: false, error: 'Invalid storage path for authenticated user.' };
@@ -161,6 +200,7 @@ export async function savePhotoToLibrary(formData) {
       // Legacy path: server-side upload through Vercel route.
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
+      photoHash = createHash('sha256').update(buffer).digest('hex');
 
       const { error: uploadError } = await supabase.storage
         .from('user-photos')
@@ -179,6 +219,9 @@ export async function savePhotoToLibrary(formData) {
     } else {
       const parsedSize = Number(directFileSizeRaw);
       fileSize = Number.isFinite(parsedSize) && parsedSize > 0 ? parsedSize : null;
+      if (!photoHash) {
+        return { success: false, error: 'Missing photo hash for duplicate detection.' };
+      }
     }
 
     const baseInsertPayload = {
@@ -192,6 +235,7 @@ export async function savePhotoToLibrary(formData) {
       time_taken: toNullableTime(timeTaken),
       gps_latitude: gpsLatitudeRaw ? (Number.isFinite(parseFloat(gpsLatitudeRaw)) ? parseFloat(gpsLatitudeRaw) : null) : null,
       gps_longitude: gpsLongitudeRaw ? (Number.isFinite(parseFloat(gpsLongitudeRaw)) ? parseFloat(gpsLongitudeRaw) : null) : null,
+      photo_hash: photoHash,
       matched_show_date: toNullableDate(matchedShowDate),
       show_start_time: showStartTime,
       raw_exif: buildVisibilityAwareRawExif(parsedRawExif, false),
@@ -214,7 +258,24 @@ export async function savePhotoToLibrary(formData) {
         .select()
         .single();
 
+      if (fallbackDbError && isPhotoHashDuplicateError(fallbackDbError)) {
+        await removeStorageObjectSafely(supabase, storagePath);
+        const { data: existingPhoto } = await supabase
+          .from('photos')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('photo_hash', photoHash)
+          .maybeSingle();
+        return {
+          success: false,
+          errorCode: 'duplicate_photo',
+          duplicatePhotoId: existingPhoto?.id || null,
+          error: 'This photo has already been uploaded to your library.',
+        };
+      }
+
       if (fallbackDbError) {
+        await removeStorageObjectSafely(supabase, storagePath);
         console.error('DB Insert Error:', fallbackDbError);
         return { success: false, error: fallbackDbError.message };
       }
@@ -230,6 +291,22 @@ export async function savePhotoToLibrary(formData) {
     }
 
     if (dbError) {
+      if (isPhotoHashDuplicateError(dbError)) {
+        await removeStorageObjectSafely(supabase, storagePath);
+        const { data: existingPhoto } = await supabase
+          .from('photos')
+          .select('id')
+          .eq('user_id', user.id)
+          .eq('photo_hash', photoHash)
+          .maybeSingle();
+        return {
+          success: false,
+          errorCode: 'duplicate_photo',
+          duplicatePhotoId: existingPhoto?.id || null,
+          error: 'This photo has already been uploaded to your library.',
+        };
+      }
+      await removeStorageObjectSafely(supabase, storagePath);
       console.error('DB Insert Error:', dbError);
       return { success: false, error: dbError.message };
     }

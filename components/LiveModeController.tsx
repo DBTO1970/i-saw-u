@@ -16,6 +16,16 @@ import {
 
 const LIVE_MODE_STORAGE_KEY = 'liveModeEnabledV1';
 
+async function computeBlobSha256Hex(blob: Blob): Promise<string> {
+  if (!globalThis.crypto?.subtle) {
+    throw new Error('Secure hashing is not available in this browser.');
+  }
+  const arrayBuffer = await blob.arrayBuffer();
+  const digest = await crypto.subtle.digest('SHA-256', arrayBuffer);
+  const digestBytes = new Uint8Array(digest);
+  return Array.from(digestBytes).map((byte) => byte.toString(16).padStart(2, '0')).join('');
+}
+
 type LiveModeSessionShow = {
   date: string;
   venueName: string;
@@ -80,6 +90,7 @@ async function uploadQueuedPhoto(task: OfflineUploadTask): Promise<void> {
       maxWidth: 1920,
       maxHeight: 1920,
     });
+    const photoHash = await computeBlobSha256Hex(webpBlob);
 
     const supabase = createSupabaseClient();
     const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -105,6 +116,7 @@ async function uploadQueuedPhoto(task: OfflineUploadTask): Promise<void> {
     formData.append('storagePath', storagePath);
     formData.append('fileSize', String(webpBlob.size));
     formData.append('mimeType', 'image/webp');
+    formData.append('photoHash', photoHash);
     formData.append('fileName', task.fileName || originalName);
     formData.append('dateTaken', task.exifMetadata.dateTimeOriginal || '');
     formData.append('timeTaken', task.exifMetadata.timeTaken || '');

@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS public.photos (
   gps_latitude DOUBLE PRECISION,
   gps_longitude DOUBLE PRECISION,
   raw_exif JSONB DEFAULT '{}'::jsonb,
+  photo_hash TEXT,
   matched_show_date VARCHAR(10),
   show_start_time TIME,
   created_at TIMESTAMPTZ DEFAULT NOW()
@@ -65,6 +66,12 @@ CREATE POLICY "Users can manage their own photos"
 
 CREATE INDEX IF NOT EXISTS idx_photos_user_id ON public.photos(user_id);
 CREATE INDEX IF NOT EXISTS idx_photos_date_taken ON public.photos(date_taken);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_photos_user_photo_hash_unique
+  ON public.photos(user_id, photo_hash)
+  WHERE photo_hash IS NOT NULL;
+ALTER TABLE public.photos
+ADD CONSTRAINT photos_photo_hash_hex_check
+CHECK (photo_hash IS NULL OR photo_hash ~ '^[a-f0-9]{64}$');
 
 -- 3. User Saved Shows Table
 CREATE TABLE IF NOT EXISTS public.saved_shows (

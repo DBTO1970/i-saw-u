@@ -13,7 +13,8 @@ export async function POST(request) {
       );
     }
 
-    return NextResponse.json(result, { status: result.success ? 200 : 400 });
+    const status = result.success ? 200 : result.errorCode === 'duplicate_photo' ? 409 : 400;
+    return NextResponse.json(result, { status });
   } catch (error) {
     return NextResponse.json(
       { success: false, error: error?.message || 'Failed to save photo.' },
