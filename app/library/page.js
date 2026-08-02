@@ -3,69 +3,19 @@ import { createClient } from '../../lib/supabase/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import UserNav from '../../components/UserNav';
-import LibraryPhotoDeleteButton from '../../components/LibraryPhotoDeleteButton';
-import PhotoVisibilityToggle from '../../components/PhotoVisibilityToggle';
 import PhotoLikeButton from '../../components/PhotoLikeButton';
-import { deriveCurrentSongLabelFromShowMetadata, normalizeTimeContextLabel } from '../../lib/photo-show-context';
+import SavedPhotosPanel from '../../components/SavedPhotosPanel';
+import { groupPhotosByYearAndShow } from '../../lib/photo-grouping';
 
 export const dynamic = 'force-dynamic';
 
 const TAB_KEYS = ['saved-photos', 'recent-fan-photos', 'bookmarked-shows', 'favorites'];
-
-function formatDate(value) {
-  if (!value) return '';
-  const [y, m, day] = String(value).split('-');
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  if (!y || !m || !day) return String(value);
-  return `${months[parseInt(m, 10) - 1]} ${parseInt(day, 10)}, ${y}`;
-}
 
 function formatRecentFanPhotoTimestamp(timestamp) {
   if (!timestamp) return 'recently';
   const parsed = new Date(timestamp);
   if (Number.isNaN(parsed.getTime())) return 'recently';
   return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-}
-
-function parseRawExif(rawExif) {
-  if (!rawExif) return {};
-  if (typeof rawExif === 'string') {
-    try {
-      const parsed = JSON.parse(rawExif);
-      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-    } catch {
-      return {};
-    }
-  }
-  if (typeof rawExif === 'object' && !Array.isArray(rawExif)) {
-    return rawExif;
-  }
-  return {};
-}
-
-function getSavedShowMetadata(photo) {
-  const rawExif = parseRawExif(photo?.raw_exif);
-  const showMetadata = rawExif?.showMetadata;
-  if (!showMetadata || typeof showMetadata !== 'object' || Array.isArray(showMetadata)) {
-    return null;
-  }
-  return showMetadata;
-}
-
-function deriveYearFromPhoto(photo, showDate) {
-  const showYear = typeof showDate === 'string' ? showDate.slice(0, 4) : '';
-  if (/^\d{4}$/.test(showYear)) return showYear;
-
-  const candidates = [photo?.date_taken, photo?.liked_at, photo?.created_at];
-  for (const value of candidates) {
-    if (typeof value !== 'string') continue;
-    const match = value.match(/^(\d{4})[-/]/);
-    if (match) return match[1];
-    const parsed = new Date(value);
-    if (!Number.isNaN(parsed.getTime())) return String(parsed.getFullYear());
-  }
-
-  return 'Unknown Year';
 }
 
 function groupShowsByYear(shows) {
@@ -85,68 +35,6 @@ function groupShowsByYear(shows) {
       if (leftYear === 'Unknown Year') return 1;
       if (rightYear === 'Unknown Year') return -1;
       return Number(rightYear) - Number(leftYear);
-    });
-}
-
-function groupPhotosByYearAndShow(photos) {
-  const years = new Map();
-
-  (photos || []).forEach((photo) => {
-    const rawExif = parseRawExif(photo?.raw_exif);
-    const showMetadata = getSavedShowMetadata(photo);
-    const showDate = showMetadata?.matchedShowDate || photo?.matched_show_date || null;
-    const year = deriveYearFromPhoto(photo, showDate);
-
-    if (!years.has(year)) {
-      years.set(year, new Map());
-    }
-
-    const yearGroups = years.get(year);
-    const groupKey = showDate ? `show:${showDate}` : 'between-shows';
-    if (!yearGroups.has(groupKey)) {
-      const venueName = showMetadata?.venueName || showMetadata?.showData?.venueName || null;
-      const city = showMetadata?.city || showMetadata?.showData?.city || null;
-      const state = showMetadata?.state || showMetadata?.showData?.state || null;
-      yearGroups.set(groupKey, {
-        key: groupKey,
-        showDate,
-        label: showDate ? formatDate(showDate) : 'In Between Shows',
-        venueName,
-        location: [city, state].filter(Boolean).join(', ') || null,
-        photos: [],
-      });
-    }
-
-    const group = yearGroups.get(groupKey);
-    const currentSong = deriveCurrentSongLabelFromShowMetadata(showMetadata, rawExif) || null;
-    const timeContextLabel = normalizeTimeContextLabel(showMetadata?.timeContextLabel || rawExif?.timeContextLabel || '');
-    group.photos.push({
-      ...photo,
-      rawExif,
-      showMetadata,
-      currentSong,
-      timeContextLabel,
-    });
-  });
-
-  return Array.from(years.entries())
-    .map(([year, groupMap]) => {
-      const groups = Array.from(groupMap.values())
-        .sort((left, right) => {
-          if (!left.showDate && right.showDate) return 1;
-          if (left.showDate && !right.showDate) return -1;
-          return String(right.showDate || '').localeCompare(String(left.showDate || ''));
-        })
-        .map((group) => ({
-          ...group,
-          photos: group.photos.sort((left, right) => String(right.created_at || right.liked_at || '').localeCompare(String(left.created_at || left.liked_at || ''))),
-        }));
-      return { year, groups };
-    })
-    .sort((left, right) => {
-      if (left.year === 'Unknown Year') return 1;
-      if (right.year === 'Unknown Year') return -1;
-      return Number(right.year) - Number(left.year);
     });
 }
 
@@ -172,12 +60,10 @@ export default async function LibraryPage({ searchParams }) {
 
   const activeTab = TAB_KEYS.includes(searchParams?.tab) ? searchParams.tab : 'saved-photos';
   const groupedSavedShows = groupShowsByYear(savedShows);
-  const groupedSavedPhotos = groupPhotosByYearAndShow(photos);
   const groupedFavoritePhotos = groupPhotosByYearAndShow(favoritePhotos);
   const groupedRecentFanShows = groupShowsByYear(recentFanPhotoShows);
   const bookmarkedShowDates = new Set((savedShows || []).map((show) => show.show_date).filter(Boolean));
 
-  const defaultSavedPhotosYear = groupedSavedPhotos[0]?.year || null;
   const defaultRecentFanYear = groupedRecentFanShows[0]?.[0] || null;
   const defaultBookmarkedYear = groupedSavedShows[0]?.[0] || null;
   const defaultFavoritesYear = groupedFavoritePhotos[0]?.year || null;
@@ -222,81 +108,7 @@ export default async function LibraryPage({ searchParams }) {
 
         {activeTab === 'saved-photos' ? (
           <section className="space-y-4">
-            {photosError ? (
-              <div className="rounded-2xl border border-dashed border-slate-800 p-8 text-center text-slate-400">{photosError}</div>
-            ) : groupedSavedPhotos.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-slate-800 p-8 text-center text-slate-400">
-                No saved photos yet. Upload a photo on the home page and click "Save to Library".
-              </div>
-            ) : (
-              <div className="space-y-4">
-                {groupedSavedPhotos.map((yearGroup) => (
-                  <details key={yearGroup.year} open={yearGroup.year === defaultSavedPhotosYear} className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60">
-                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-left">
-                      <div>
-                        <p className="text-sm font-semibold text-white">{yearGroup.year}</p>
-                        <p className="text-xs text-slate-400">{yearGroup.groups.length} grouping{yearGroup.groups.length === 1 ? '' : 's'}</p>
-                      </div>
-                    </summary>
-                    <div className="space-y-4 border-t border-slate-800 p-4">
-                      {yearGroup.groups.map((group) => (
-                        <div key={`${yearGroup.year}-${group.key}`} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
-                          <div className="mb-3 flex items-center justify-between gap-2">
-                            <div>
-                              <p className="text-sm font-semibold text-white">{group.label}</p>
-                              {group.showDate ? (
-                                <p className="text-xs text-slate-400">
-                                  {group.venueName || 'Unknown venue'}
-                                  {group.location ? ` • ${group.location}` : ''}
-                                </p>
-                              ) : (
-                                <p className="text-xs text-slate-400">Photos not matched to a show date</p>
-                              )}
-                            </div>
-                            {group.showDate ? (
-                              <Link href={`/library/show/${group.showDate}`} className="text-xs font-medium text-cyan-400 underline hover:text-cyan-300">
-                                Open show →
-                              </Link>
-                            ) : null}
-                          </div>
-                          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                            {group.photos.map((photo) => (
-                              <div key={photo.id} className="group relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60 p-4 transition-all hover:border-cyan-500/40">
-                                <Link href={`/library/photo/${photo.id}`} className="block">
-                                  {photo.url ? (
-                                    <div className="relative mb-3 aspect-video w-full overflow-hidden rounded-xl bg-slate-900">
-                                      <img src={photo.url} alt={photo.file_name} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
-                                    </div>
-                                  ) : (
-                                    <div className="mb-3 flex aspect-video w-full items-center justify-center rounded-xl bg-slate-900 text-xs text-slate-500">
-                                      Photo unavailable
-                                    </div>
-                                  )}
-                                  <div className="space-y-1 text-xs text-slate-300">
-                                    <p className="truncate font-semibold text-white">{photo.file_name}</p>
-                                    <p className="truncate text-slate-400">Current song: {photo.currentSong || 'Unknown'}</p>
-                                    {photo.timeContextLabel ? <p className="truncate text-slate-500">Context: {photo.timeContextLabel}</p> : null}
-                                  </div>
-                                </Link>
-                                <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-3">
-                                  <PhotoVisibilityToggle photoId={photo.id} initialIsPublic={!!photo.is_public} />
-                                  <LibraryPhotoDeleteButton
-                                    photoId={photo.id}
-                                    storagePath={photo.storage_path}
-                                    label="Delete photo"
-                                    className="rounded-lg border border-red-500/50 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-200 transition hover:bg-red-500/20 disabled:opacity-60"
-                                  />
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </details>
-                ))}
-              </div>
-            )}
+            <SavedPhotosPanel photos={photos} photosError={photosError} />
           </section>
         ) : null}
 
