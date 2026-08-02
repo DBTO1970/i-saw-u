@@ -132,10 +132,12 @@ export default function LiveModeController() {
   const [queueManager, setQueueManager] = useState<OfflineUploadQueueManager | null>(null);
   const [isLiveModeEnabled, setIsLiveModeEnabled] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
+  const [isSavingToDevice, setIsSavingToDevice] = useState(false);
   const [isOnline, setIsOnline] = useState<boolean | null>(null);
   const [queueStats, setQueueStats] = useState({ total: 0, pending: 0, failed: 0, processing: 0 });
   const [statusMessage, setStatusMessage] = useState('');
   const [queueErrorSummary, setQueueErrorSummary] = useState('');
+  const [latestCapturedPhotoForDeviceSave, setLatestCapturedPhotoForDeviceSave] = useState<File | null>(null);
 
   useEffect(() => {
     const manager = createOfflineUploadQueueManager();
@@ -231,6 +233,7 @@ export default function LiveModeController() {
         fileName: capturedPhoto.file.name || 'live-mode-photo.jpg',
         mimeType: capturedPhoto.file.type || 'image/jpeg',
       });
+      setLatestCapturedPhotoForDeviceSave(capturedPhoto.file);
 
       setStatusMessage('Photo captured and queued for background upload.');
       await queueManager.processPendingTasks();
@@ -268,6 +271,42 @@ export default function LiveModeController() {
     }
     setStatusMessage('Uploads are queued for retry.');
   }, [queueManager]);
+
+  const handleSaveLatestPhotoToDevice = useCallback(async () => {
+    if (!latestCapturedPhotoForDeviceSave) {
+      setStatusMessage('Take a live photo first, then save it to your device.');
+      return;
+    }
+
+    setIsSavingToDevice(true);
+
+    try {
+      if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+        if (typeof navigator.canShare === 'function' && navigator.canShare({ files: [latestCapturedPhotoForDeviceSave] })) {
+          await navigator.share({
+            files: [latestCapturedPhotoForDeviceSave],
+            title: 'Save live photo',
+          });
+          setStatusMessage('Share sheet opened. Choose "Save Image" to add it to Photos.');
+          return;
+        }
+      }
+
+      const downloadUrl = URL.createObjectURL(latestCapturedPhotoForDeviceSave);
+      const anchor = document.createElement('a');
+      anchor.href = downloadUrl;
+      anchor.download = latestCapturedPhotoForDeviceSave.name || 'live-mode-photo.jpg';
+      document.body.appendChild(anchor);
+      anchor.click();
+      document.body.removeChild(anchor);
+      URL.revokeObjectURL(downloadUrl);
+      setStatusMessage('Download started. Open the file and save it to Photos.');
+    } catch (error) {
+      setStatusMessage(error instanceof Error ? error.message : 'Unable to save this photo to your device.');
+    } finally {
+      setIsSavingToDevice(false);
+    }
+  }, [latestCapturedPhotoForDeviceSave]);
 
   return (
     <section className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 p-4">
@@ -316,6 +355,14 @@ export default function LiveModeController() {
           className="rounded-xl border border-cyan-400/50 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-60"
         >
           {queueStats.processing > 0 ? 'Processing...' : 'Process Queue Now'}
+        </button>
+        <button
+          type="button"
+          disabled={!latestCapturedPhotoForDeviceSave || isSavingToDevice}
+          onClick={handleSaveLatestPhotoToDevice}
+          className="rounded-xl border border-emerald-400/60 px-4 py-2 text-sm font-semibold text-emerald-100 transition hover:bg-emerald-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {isSavingToDevice ? 'Opening Save Flow...' : 'Save Latest to Device Photos'}
         </button>
       </div>
 
