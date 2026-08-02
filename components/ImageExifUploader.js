@@ -103,6 +103,34 @@ function logExifDiagnostic(stage, file, details = {}, error = null) {
   });
 }
 
+function logSavePipelineDiagnostic(stage, file, details = {}, error = null) {
+  const payload = {
+    stage,
+    file: buildFileDiagnostics(file),
+    details,
+  };
+
+  if (error) {
+    console.error('[SAVE_DIAGNOSTIC]', payload, error);
+    void sendClientDiagnostic({
+      event: `save-${stage}`,
+      severity: 'error',
+      source: 'image-exif-uploader',
+      details: payload,
+      error: withClientDiagnosticError(error),
+    });
+    return;
+  }
+
+  console.warn('[SAVE_DIAGNOSTIC]', payload);
+  void sendClientDiagnostic({
+    event: `save-${stage}`,
+    severity: 'warn',
+    source: 'image-exif-uploader',
+    details: payload,
+  });
+}
+
 function pad2(value) {
   return String(value).padStart(2, '0');
 }
@@ -688,75 +716,127 @@ export default function ImageExifUploader({
       return;
     }
 
+    const sourceFile = lastImageFileRef.current;
     setIsSaving(true);
     setSaveMessage(null);
+    logSavePipelineDiagnostic('save-start', sourceFile, {
+      selectedFileName: selectedFileName || null,
+      hasDate: metadata.dateTimeOriginal !== 'Not available',
+      hasGps: metadata.gpsLatitude !== 'Not available' && metadata.gpsLongitude !== 'Not available',
+    });
 
     try {
-      // 1. Client-side WebP optimization
-      const { webpBlob, originalName } = await convertToWebP(lastImageFileRef.current, {
-        maxWidth: 1920,
-        maxHeight: 1920,
-        quality: 0.85,
-      });
-
-      // 2. Build FormData
-      const formData = new FormData();
-      const webpFile = new File([webpBlob], originalName.replace(/\.[^/.]+$/, '') + '.webp', { type: 'image/webp' });
-
-      formData.append('file', webpFile);
-      formData.append('fileName', selectedFileName || originalName);
-      formData.append('dateTaken', metadata.dateTimeOriginal || '');
-      formData.append('timeTaken', metadata.timeTaken || '');
-      const rawLat = toDecimalDegrees(metadata.rawGpsLatitude);
-      const rawLon = toDecimalDegrees(metadata.rawGpsLongitude);
-      if (rawLat !== null && Number.isFinite(rawLat)) {
-        const latRef = (metadata.rawGpsLatitudeRef || '').toUpperCase();
-        const signedLat = latRef.startsWith('S') ? -Math.abs(rawLat) : rawLat;
-        formData.append('gpsLatitude', String(signedLat));
+      let webpBlob;
+      let originalName;
+      try {
+        // 1. Client-side WebP optimization
+        const converted = await convertToWebP(sourceFile, {
+          maxWidth: 1920,
+          maxHeight: 1920,
+          quality: 0.85,
+        });
+        webpBlob = converted.webpBlob;
+        originalName = converted.originalName;
+      } catch (convertError) {
+        logSavePipelineDiagnostic('convert-failed', sourceFile, {
+          maxWidth: 1920,
+          maxHeight: 1920,
+          quality: 0.85,
+        }, convertError);
+        throw convertError;
       }
-      if (rawLon !== null && Number.isFinite(rawLon)) {
-        const lonRef = (metadata.rawGpsLongitudeRef || '').toUpperCase();
-        const signedLon = lonRef.startsWith('W') ? -Math.abs(rawLon) : rawLon;
-        formData.append('gpsLongitude', String(signedLon));
+
+      let formData;
+      try {
+        // 2. Build FormData
+        formData = new FormData();
+        const webpFile = new File([webpBlob], originalName.replace(/\.[^/.]+$/, '') + '.webp', { type: 'image/webp' });
+
+        formData.append('file', webpFile);
+        formData.append('fileName', selectedFileName || originalName);
+        formData.append('dateTaken', metadata.dateTimeOriginal || '');
+        formData.append('timeTaken', metadata.timeTaken || '');
+        const rawLat = toDecimalDegrees(metadata.rawGpsLatitude);
+        const rawLon = toDecimalDegrees(metadata.rawGpsLongitude);
+        if (rawLat !== null && Number.isFinite(rawLat)) {
+          const latRef = (metadata.rawGpsLatitudeRef || '').toUpperCase();
+          const signedLat = latRef.startsWith('S') ? -Math.abs(rawLat) : rawLat;
+          formData.append('gpsLatitude', String(signedLat));
+        }
+        if (rawLon !== null && Number.isFinite(rawLon)) {
+          const lonRef = (metadata.rawGpsLongitudeRef || '').toUpperCase();
+          const signedLon = lonRef.startsWith('W') ? -Math.abs(rawLon) : rawLon;
+          formData.append('gpsLongitude', String(signedLon));
+        }
+        if (matchedShowDate) formData.append('matchedShowDate', matchedShowDate);
+        if (showStartTime) formData.append('showStartTime', showStartTime);
+        const { diagnostics: _diagnostics, ...metadataForSave } = metadata;
+
+        formData.append(
+          'rawExif',
+          JSON.stringify({
+            ...metadataForSave,
+            showMetadata: {
+              matchedShowDate: matchedShowDate || null,
+              showStartTime: showStartTime || null,
+              venueName: showData?.venueName || null,
+              city: showData?.city || null,
+              state: showData?.state || null,
+              currentSong: currentSongLabel || null,
+              timeContextLabel: timeContextLabel || null,
+              calibrationSource: calibrationMetadata?.source || null,
+              calibrationConfidence: calibrationMetadata?.confidence || null,
+              calibrationMatchedSong: calibrationMetadata?.matchedSongLabel || null,
+              timingCalibration: calibrationMetadata
+                ? {
+                    source: calibrationMetadata.source || null,
+                    confidence: calibrationMetadata.confidence || null,
+                    matchedSongLabel: calibrationMetadata.matchedSongLabel || null,
+                    showStartTime: calibrationMetadata.showStartTime || showStartTime || null,
+                  }
+                : null,
+              showData: showData || null,
+            },
+          })
+        );
+      } catch (formDataError) {
+        logSavePipelineDiagnostic('formdata-failed', sourceFile, {
+          matchedShowDate: matchedShowDate || null,
+          showStartTime: showStartTime || null,
+          hasShowData: Boolean(showData),
+        }, formDataError);
+        throw formDataError;
       }
-      if (matchedShowDate) formData.append('matchedShowDate', matchedShowDate);
-      if (showStartTime) formData.append('showStartTime', showStartTime);
-      const { diagnostics: _diagnostics, ...metadataForSave } = metadata;
 
-      formData.append(
-        'rawExif',
-        JSON.stringify({
-          ...metadataForSave,
-          showMetadata: {
-            matchedShowDate: matchedShowDate || null,
-            showStartTime: showStartTime || null,
-            venueName: showData?.venueName || null,
-            city: showData?.city || null,
-            state: showData?.state || null,
-            currentSong: currentSongLabel || null,
-            timeContextLabel: timeContextLabel || null,
-            calibrationSource: calibrationMetadata?.source || null,
-            calibrationConfidence: calibrationMetadata?.confidence || null,
-            calibrationMatchedSong: calibrationMetadata?.matchedSongLabel || null,
-            timingCalibration: calibrationMetadata
-              ? {
-                  source: calibrationMetadata.source || null,
-                  confidence: calibrationMetadata.confidence || null,
-                  matchedSongLabel: calibrationMetadata.matchedSongLabel || null,
-                  showStartTime: calibrationMetadata.showStartTime || showStartTime || null,
-                }
-              : null,
-            showData: showData || null,
-          },
-        })
-      );
+      let response;
+      try {
+        response = await fetch('/api/library/save-photo', {
+          method: 'POST',
+          body: formData,
+        });
+      } catch (uploadError) {
+        logSavePipelineDiagnostic('upload-failed', sourceFile, {
+          phase: 'request',
+        }, uploadError);
+        throw uploadError;
+      }
 
-      const response = await fetch('/api/library/save-photo', {
-        method: 'POST',
-        body: formData,
-      });
-      const res = await response.json();
+      let res;
+      try {
+        res = await response.json();
+      } catch (uploadError) {
+        logSavePipelineDiagnostic('upload-failed', sourceFile, {
+          phase: 'response-json',
+          status: response.status,
+        }, uploadError);
+        throw uploadError;
+      }
       if (!res || typeof res !== 'object' || typeof res.success !== 'boolean') {
+        logSavePipelineDiagnostic('upload-response-invalid', sourceFile, {
+          status: response.status,
+          responseType: typeof res,
+          responseKeys: res && typeof res === 'object' ? Object.keys(res).slice(0, 10) : [],
+        });
         setSaveMessage({ type: 'error', text: 'Save did not complete correctly. Please try again.' });
         return;
       }
@@ -764,6 +844,11 @@ export default function ImageExifUploader({
       if (res.success) {
         setSaveMessage({ type: 'success', text: 'Saved to your personal library!' });
       } else {
+        logSavePipelineDiagnostic('upload-failed', sourceFile, {
+          phase: 'api-result',
+          status: response.status,
+          apiError: res.error || null,
+        });
         setSaveMessage({ type: 'error', text: res.error || 'Failed to save photo.' });
       }
     } catch (err) {
