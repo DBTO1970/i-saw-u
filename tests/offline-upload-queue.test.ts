@@ -280,4 +280,54 @@ describe('OfflineUploadQueueManager', () => {
     manager.clearFailedTasks();
     expect(manager.getTasks()).toHaveLength(0);
   });
+
+  it('can count and clear stale legacy blob-url items', () => {
+    const storage = createMemoryStorage();
+    const runtimeHarness = createRuntime();
+    runtimeHarness.goOffline();
+
+    const manager = new OfflineUploadQueueManager({
+      storage,
+      runtime: runtimeHarness.runtime,
+      storageKey: 'test-queue-clear-stale-legacy',
+    });
+
+    manager.addTask({
+      localFileUri: 'blob:legacy-stale',
+      fileName: 'legacy.jpg',
+      mimeType: 'image/jpeg',
+      exifMetadata: {
+        rawDateTimeOriginal: null,
+        dateTimeOriginal: null,
+        timeTaken: null,
+        gpsLatitude: null,
+        gpsLongitude: null,
+        gpsLatitudeRef: null,
+        gpsLongitudeRef: null,
+        cameraModel: null,
+      },
+    });
+
+    manager.addTask({
+      localAssetId: 'asset-durable',
+      fileName: 'durable.jpg',
+      mimeType: 'image/jpeg',
+      exifMetadata: {
+        rawDateTimeOriginal: null,
+        dateTimeOriginal: null,
+        timeTaken: null,
+        gpsLatitude: null,
+        gpsLongitude: null,
+        gpsLatitudeRef: null,
+        gpsLongitudeRef: null,
+        cameraModel: null,
+      },
+    });
+
+    expect(manager.countStaleLegacyTasks()).toBe(1);
+    manager.clearStaleLegacyTasks();
+    expect(manager.countStaleLegacyTasks()).toBe(0);
+    expect(manager.getTasks()).toHaveLength(1);
+    expect(manager.getTasks()[0].localAssetId).toBe('asset-durable');
+  });
 });

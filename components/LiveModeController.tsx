@@ -170,6 +170,7 @@ export default function LiveModeController() {
   const [isSavingToDevice, setIsSavingToDevice] = useState(false);
   const [isOnline, setIsOnline] = useState<boolean | null>(null);
   const [queueStats, setQueueStats] = useState({ total: 0, pending: 0, failed: 0, processing: 0 });
+  const [staleLegacyTaskCount, setStaleLegacyTaskCount] = useState(0);
   const [statusMessage, setStatusMessage] = useState('');
   const [queueErrorSummary, setQueueErrorSummary] = useState('');
   const [latestCapturedPhotoForDeviceSave, setLatestCapturedPhotoForDeviceSave] = useState<File | null>(null);
@@ -222,6 +223,7 @@ export default function LiveModeController() {
       const tasks = queueManager.getTasks();
       const firstErrorTask = tasks.find((task) => task.lastError);
       setQueueErrorSummary(firstErrorTask?.lastError || '');
+      setStaleLegacyTaskCount(queueManager.countStaleLegacyTasks());
     });
 
     queueManager.start(uploadQueuedPhoto);
@@ -337,6 +339,14 @@ export default function LiveModeController() {
     setStatusMessage('Failed queue items were removed.');
   }, [queueManager]);
 
+  const handleClearStaleLegacyQueueItems = useCallback(() => {
+    if (!queueManager) {
+      return;
+    }
+    queueManager.clearStaleLegacyTasks();
+    setStatusMessage('Stale legacy queue items were removed.');
+  }, [queueManager]);
+
   const handleSearchLiveModeShows = useCallback(async () => {
     const query = liveModeShowQuery.trim();
     if (query.length < 2) {
@@ -422,6 +432,7 @@ export default function LiveModeController() {
         <span className="rounded-full border border-cyan-400/40 px-2 py-1">Queued: {queueStats.pending}</span>
         <span className="rounded-full border border-cyan-400/40 px-2 py-1">Processing: {queueStats.processing}</span>
         <span className="rounded-full border border-cyan-400/40 px-2 py-1">Failed: {queueStats.failed}</span>
+        <span className="rounded-full border border-cyan-400/40 px-2 py-1">Stale legacy: {staleLegacyTaskCount}</span>
         <span className="rounded-full border border-cyan-400/40 px-2 py-1">
           Network: {isOnline === null ? 'Checking...' : isOnline ? 'Online' : 'Offline'}
         </span>
@@ -517,6 +528,14 @@ export default function LiveModeController() {
           className="rounded-xl border border-rose-400/50 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/20 disabled:cursor-not-allowed disabled:opacity-60"
         >
           Clear Failed
+        </button>
+        <button
+          type="button"
+          disabled={!queueManager || staleLegacyTaskCount === 0 || queueStats.processing > 0}
+          onClick={handleClearStaleLegacyQueueItems}
+          className="rounded-xl border border-fuchsia-400/50 px-4 py-2 text-sm font-semibold text-fuchsia-100 transition hover:bg-fuchsia-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          Clear Stale Legacy
         </button>
         <button
           type="button"

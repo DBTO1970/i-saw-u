@@ -300,6 +300,25 @@ export class OfflineUploadQueueManager {
     this.persistAndNotify();
   }
 
+  countStaleLegacyTasks() {
+    return this.tasks.filter((task) => {
+      if (task.localAssetId) {
+        return false;
+      }
+      return typeof task.localFileUri === 'string' && task.localFileUri.startsWith('blob:');
+    }).length;
+  }
+
+  clearStaleLegacyTasks() {
+    this.tasks = this.tasks.filter((task) => {
+      if (task.localAssetId) {
+        return true;
+      }
+      return !(typeof task.localFileUri === 'string' && task.localFileUri.startsWith('blob:'));
+    });
+    this.persistAndNotify();
+  }
+
   private findNextReadyTask() {
     const now = this.runtime.now();
     return this.tasks.find((task) => task.status === 'pending' && task.nextAttemptAt <= now);
