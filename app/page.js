@@ -92,9 +92,9 @@ export default async function HomePage({ searchParams }) {
             <Image
               src="/psychedelic_camera_lens.svg"
               alt="I Saw U logo"
-              width={54}
-              height={54}
-              className="h-12 w-12 rounded-full border border-cyan-500/30 bg-slate-950/80 p-1 shadow-lg shadow-cyan-900/20 sm:h-14 sm:w-14"
+              width={76}
+              height={76}
+              className="h-16 w-16 rounded-full border border-cyan-400/50 bg-slate-950/90 p-1.5 shadow-xl shadow-cyan-900/40 ring-1 ring-cyan-300/20 sm:h-20 sm:w-20"
               priority
             />
             <div className="space-y-1">
