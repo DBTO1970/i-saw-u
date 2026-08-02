@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getShowByDate, searchLocationAutocomplete, searchShowsByLocation } from '../app/actions/shows';
 import ImageExifUploader from './ImageExifUploader';
 import ShowMatchCard from './ShowMatchCard';
+import LiveModeController from './LiveModeController';
 
 function extractDateFromMetadata(metadata) {
   if (!metadata || typeof metadata !== 'object') {
@@ -666,6 +667,8 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
       timeContextLabel={timeContextLabel}
       calibrationMetadata={calibrationMetadata}
     />
+
+    <LiveModeController />
 
     {initialSharedPhoto ? (
       <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100">

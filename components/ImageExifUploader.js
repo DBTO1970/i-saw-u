@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ExifReader from 'exifreader';
 import { convertToWebP } from '../lib/image-optimizer';
+import { capturePhotoWithNativeCamera } from '../lib/native-camera-photo';
 
 const emptyMetadata = {
   dateTimeOriginal: 'Not available',
@@ -57,6 +58,36 @@ const GPS_LATITUDE_TAG_CANDIDATES = ['GPSLatitude', 'GPS Latitude', 'xmpGPSLatit
 const GPS_LONGITUDE_TAG_CANDIDATES = ['GPSLongitude', 'GPS Longitude', 'xmpGPSLongitude', 'Longitude'];
 const GPS_LATITUDE_REF_TAG_CANDIDATES = ['GPSLatitudeRef', 'GPS Latitude Ref', 'LatitudeRef'];
 const GPS_LONGITUDE_REF_TAG_CANDIDATES = ['GPSLongitudeRef', 'GPS Longitude Ref', 'LongitudeRef'];
+
+function buildFileDiagnostics(file) {
+  if (!file) {
+    return { present: false };
+  }
+
+  return {
+    present: true,
+    name: file.name || null,
+    type: file.type || null,
+    size: typeof file.size === 'number' ? file.size : null,
+    lastModified: typeof file.lastModified === 'number' ? file.lastModified : null,
+    extension: typeof file.name === 'string' && file.name.includes('.') ? file.name.split('.').pop()?.toLowerCase() : null,
+  };
+}
+
+function logExifDiagnostic(stage, file, details = {}, error = null) {
+  const payload = {
+    stage,
+    file: buildFileDiagnostics(file),
+    details,
+  };
+
+  if (error) {
+    console.error('[EXIF_DIAGNOSTIC]', payload, error);
+    return;
+  }
+
+  console.warn('[EXIF_DIAGNOSTIC]', payload);
+}
 
 function pad2(value) {
   return String(value).padStart(2, '0');
@@ -630,6 +661,7 @@ export default function ImageExifUploader({
   const [error, setError] = useState('');
   const [sidecarError, setSidecarError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [isCapturingPhoto, setIsCapturingPhoto] = useState(false);
   const [saveMessage, setSaveMessage] = useState(null);
   const previewUrlRef = useRef('');
   const inputRef = useRef(null);
@@ -766,6 +798,9 @@ export default function ImageExifUploader({
     setError('');
 
     try {
+      logExifDiagnostic('read-start', file, {
+        sidecarLoaded: Boolean(overrideSidecar || activeSidecarRef.current),
+      });
       const tags = await ExifReader.load(file, { expanded: true });
       const entries = collectTagEntries(tags);
       const activeSidecar = overrideSidecar || activeSidecarRef.current;
@@ -838,11 +873,62 @@ export default function ImageExifUploader({
       };
       setMetadata(nextMetadata);
       onMetadataChange?.(nextMetadata);
+      logExifDiagnostic('read-success', file, {
+        totalTagEntries: diagnostics.totalTagEntries,
+        hasDate: nextMetadata.dateTimeOriginal !== 'Not available',
+        hasGps: nextMetadata.gpsLatitude !== 'Not available' && nextMetadata.gpsLongitude !== 'Not available',
+        dateSource: nextMetadata.dateSource,
+        gpsSource: nextMetadata.gpsSource,
+      });
     } catch (parseError) {
-      setError('Unable to read EXIF data for this image.');
-      setMetadata(emptyMetadata);
-      onMetadataChange?.(emptyMetadata);
-      console.error(parseError);
+      const activeSidecar = overrideSidecar || activeSidecarRef.current;
+      let fallbackRawDate = activeSidecar?.date || null;
+      let fallbackDateSource = activeSidecar?.date ? 'sidecar' : 'none';
+      let fallbackTimeSource = activeSidecar?.date ? 'sidecar' : 'none';
+      if (!fallbackRawDate && typeof file.lastModified === 'number' && file.lastModified > 0) {
+        fallbackRawDate = new Date(file.lastModified);
+        fallbackDateSource = 'file-last-modified';
+        fallbackTimeSource = 'file-last-modified';
+      }
+
+      const fallbackLat = activeSidecar?.latitude ?? null;
+      const fallbackLon = activeSidecar?.longitude ?? null;
+      const hasFallbackGps = fallbackLat != null && fallbackLon != null;
+      const fallbackMetadata = {
+        ...emptyMetadata,
+        dateTimeOriginal: parseExifDate(fallbackRawDate) || 'Not available',
+        dateTimeOriginalDisplay: formatExifDate(fallbackRawDate) || 'Not available',
+        timeTaken: parseExifTime(fallbackRawDate) || 'Not available',
+        gpsLatitude: formatCoordinate(fallbackLat, null) || 'Not available',
+        gpsLongitude: formatCoordinate(fallbackLon, null) || 'Not available',
+        dateSource: fallbackRawDate ? fallbackDateSource : 'none',
+        timeSource: parseExifTime(fallbackRawDate) ? fallbackTimeSource : 'none',
+        gpsSource: hasFallbackGps ? 'sidecar' : 'none',
+        sidecarFileName: activeSidecar?.fileName || '',
+        sidecarUsed: Boolean(activeSidecar && (activeSidecar.date || hasFallbackGps)),
+        rawDateTimeOriginal: fallbackRawDate || null,
+        rawGpsLatitude: fallbackLat,
+        rawGpsLongitude: fallbackLon,
+        diagnostics: {
+          ...emptyMetadata.diagnostics,
+          parserError: parseError?.message || String(parseError),
+          sidecarSummary: activeSidecar?.summary || 'No sidecar loaded.',
+        },
+      };
+
+      setError('Embedded EXIF could not be read for this image (common with some HEIC exports). Applied safe fallbacks where possible.');
+      setMetadata(fallbackMetadata);
+      onMetadataChange?.(fallbackMetadata);
+      logExifDiagnostic(
+        'read-failure-fallback-applied',
+        file,
+        {
+          fallbackDateSource: fallbackMetadata.dateSource,
+          fallbackGpsSource: fallbackMetadata.gpsSource,
+          sidecarLoaded: Boolean(activeSidecar),
+        },
+        parseError,
+      );
     } finally {
       setIsParsing(false);
     }
@@ -852,6 +938,22 @@ export default function ImageExifUploader({
     const file = event.target.files?.[0];
     if (file) {
       handleFile(file);
+    }
+  }, [handleFile]);
+
+  const handleCaptureWithCamera = useCallback(async () => {
+    setError('');
+    setSaveMessage(null);
+    setIsCapturingPhoto(true);
+
+    try {
+      const capturedPhoto = await capturePhotoWithNativeCamera();
+      capturedPhoto.revokeLocalFileUri();
+      await handleFile(capturedPhoto.file);
+    } catch (cameraError) {
+      setError(cameraError?.message || 'Unable to capture a photo with the native camera.');
+    } finally {
+      setIsCapturingPhoto(false);
     }
   }, [handleFile]);
 
@@ -946,13 +1048,23 @@ export default function ImageExifUploader({
             <p className="text-base font-semibold text-white sm:text-lg">Drop an image here</p>
             <p className="text-sm text-slate-400">or</p>
           </div>
-          <button
-            type="button"
-            onClick={() => inputRef.current?.click()}
-            className="w-full rounded-full bg-cyan-500 px-5 py-2.5 text-sm font-medium text-slate-950 transition hover:bg-cyan-400 sm:w-auto"
-          >
-            Select image file
-          </button>
+          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+            <button
+              type="button"
+              onClick={() => inputRef.current?.click()}
+              className="w-full rounded-full bg-cyan-500 px-5 py-2.5 text-sm font-medium text-slate-950 transition hover:bg-cyan-400 sm:w-auto"
+            >
+              Select image file
+            </button>
+            <button
+              type="button"
+              onClick={handleCaptureWithCamera}
+              disabled={isCapturingPhoto}
+              className="w-full rounded-full border border-cyan-400/40 bg-cyan-500/10 px-5 py-2.5 text-sm font-medium text-cyan-200 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+            >
+              {isCapturingPhoto ? 'Opening camera...' : 'Take photo with camera'}
+            </button>
+          </div>
           <input
             ref={sidecarInputRef}
             type="file"

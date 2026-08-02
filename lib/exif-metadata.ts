@@ -105,7 +105,25 @@ function buildDisplayDate(date: string | null, time: string | null): string | nu
 }
 
 export async function parseExifFromArrayBuffer(arrayBuffer: ArrayBuffer): Promise<ParsedExifMetadata> {
-  const tags = (await ExifReader.load(arrayBuffer, { expanded: true })) as Record<string, ExifTagValue>;
+  let tags: Record<string, ExifTagValue>;
+  try {
+    tags = (await ExifReader.load(arrayBuffer, { expanded: true })) as Record<string, ExifTagValue>;
+  } catch (error) {
+    console.error('[EXIF_DIAGNOSTIC]', {
+      stage: 'server-parse-arraybuffer-failed',
+      byteLength: arrayBuffer.byteLength,
+    }, error);
+    return {
+      rawDateTimeOriginal: null,
+      dateTimeOriginal: null,
+      dateTimeOriginalDisplay: null,
+      timeTaken: null,
+      gpsLatitude: null,
+      gpsLongitude: null,
+      gpsLatitudeRef: null,
+      gpsLongitudeRef: null,
+    };
+  }
 
   const dateTag = readTag(tags, ['DateTimeOriginal', 'Date Time Original', 'DateTimeDigitized', 'CreateDate']);
   const latitudeTag = readTag(tags, ['GPSLatitude', 'GPS Latitude']);
