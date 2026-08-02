@@ -673,7 +673,11 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
       calibrationMetadata={calibrationMetadata}
     />
 
-    <LiveModeController />
+    <LiveModeController
+      defaultShowData={effectiveShow || null}
+      defaultMatchedShowDate={effectiveShow?.date || ''}
+      defaultShowStartTime={showStartTime || '19:30'}
+    />
 
     {initialSharedPhoto ? (
       <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100">

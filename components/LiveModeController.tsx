@@ -28,6 +28,20 @@ type LiveModeSessionShow = {
   setlist: Array<unknown>;
 };
 
+type LiveModeControllerProps = {
+  defaultShowData?: Record<string, unknown> | null;
+  defaultMatchedShowDate?: string;
+  defaultShowStartTime?: string;
+};
+
+function getCurrentLocalDateString() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
 async function uploadQueuedPhoto(task: OfflineUploadTask): Promise<void> {
   const baseDetails = {
     taskId: task.id,
@@ -124,6 +138,8 @@ async function uploadQueuedPhoto(task: OfflineUploadTask): Promise<void> {
         showMetadata: {
           matchedShowDate: task.matchedShowDate || null,
           showStartTime: task.showStartTime || null,
+          sessionMode: task.sessionMode || 'show-match',
+          sessionLabel: task.sessionLabel || null,
           venueName: typeof task.showData?.venueName === 'string' ? task.showData.venueName : null,
           city: typeof task.showData?.city === 'string' ? task.showData.city : null,
           state: typeof task.showData?.state === 'string' ? task.showData.state : null,
@@ -163,8 +179,13 @@ async function uploadQueuedPhoto(task: OfflineUploadTask): Promise<void> {
   }
 }
 
-export default function LiveModeController() {
+export default function LiveModeController({
+  defaultShowData = null,
+  defaultMatchedShowDate = '',
+  defaultShowStartTime = '19:30',
+}: LiveModeControllerProps) {
   const [queueManager, setQueueManager] = useState<OfflineUploadQueueManager | null>(null);
+  const [isAccordionOpen, setIsAccordionOpen] = useState(false);
   const [isLiveModeEnabled, setIsLiveModeEnabled] = useState(false);
   const [isCapturing, setIsCapturing] = useState(false);
   const [isSavingToDevice, setIsSavingToDevice] = useState(false);
@@ -184,7 +205,9 @@ export default function LiveModeController() {
   const [showSearchMessage, setShowSearchMessage] = useState('');
   const [showSearchResults, setShowSearchResults] = useState<LiveModeSessionShow[]>([]);
   const [selectedLiveModeShow, setSelectedLiveModeShow] = useState<LiveModeSessionShow | null>(null);
-  const [liveModeShowStartTime, setLiveModeShowStartTime] = useState('19:30');
+  const [liveModeShowStartTime, setLiveModeShowStartTime] = useState(defaultShowStartTime || '19:30');
+  const [sessionMode, setSessionMode] = useState<'show-match' | 'session-label'>('show-match');
+  const [sessionLabel, setSessionLabel] = useState<'pre-show' | 'in-between-shows' | 'post-show'>('pre-show');
 
   useEffect(() => {
     const manager = createOfflineUploadQueueManager();
@@ -290,9 +313,25 @@ export default function LiveModeController() {
       queueManager.addTask({
         localAssetId,
         exifMetadata,
-        matchedShowDate: selectedLiveModeShow?.date || null,
+        matchedShowDate:
+          sessionMode === 'show-match'
+            ? (
+              selectedLiveModeShow?.date
+              || defaultMatchedShowDate
+              || (typeof defaultShowData?.date === 'string' ? defaultShowData.date : '')
+              || getCurrentLocalDateString()
+            )
+            : null,
         showStartTime: liveModeShowStartTime || null,
-        showData: selectedLiveModeShow || null,
+        showData:
+          selectedLiveModeShow
+          || defaultShowData
+          || {
+            date: getCurrentLocalDateString(),
+            source: 'live-mode-current-data',
+          },
+        sessionMode,
+        sessionLabel: sessionMode === 'session-label' ? sessionLabel : null,
         fileName: capturedPhoto.file.name || 'live-mode-photo.jpg',
         mimeType: capturedPhoto.file.type || 'image/jpeg',
       });
@@ -313,7 +352,16 @@ export default function LiveModeController() {
     } finally {
       setIsCapturing(false);
     }
-  }, [isLiveModeEnabled, queueManager, selectedLiveModeShow, liveModeShowStartTime]);
+  }, [
+    isLiveModeEnabled,
+    queueManager,
+    selectedLiveModeShow,
+    liveModeShowStartTime,
+    sessionMode,
+    sessionLabel,
+    defaultMatchedShowDate,
+    defaultShowData,
+  ]);
 
   const handleProcessQueueNow = useCallback(async () => {
     if (!queueManager) {
@@ -466,13 +514,25 @@ export default function LiveModeController() {
 
   return (
     <section className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <button
+        type="button"
+        onClick={() => setIsAccordionOpen((value) => !value)}
+        className="flex w-full items-center justify-between gap-3 text-left"
+      >
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.18em] text-cyan-200">Live Mode</p>
           <p className="text-xs text-cyan-100/90">
             Auto queue concert photos for upload even in poor service. Retries use exponential backoff.
           </p>
         </div>
+        <span className="rounded-full border border-cyan-400/40 px-3 py-1 text-xs font-semibold text-cyan-100">
+          {isAccordionOpen ? 'Hide' : 'Show'}
+        </span>
+      </button>
+
+      {isAccordionOpen ? (
+        <>
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
         <button
           type="button"
           onClick={() => setLiveModeEnabled(!isLiveModeEnabled)}
@@ -498,18 +558,50 @@ export default function LiveModeController() {
 
       <div className="mt-3 rounded-xl border border-cyan-400/30 bg-slate-950/40 p-3">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-300">Live Mode session show</p>
+        <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-cyan-100">
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              name="live-mode-session-mode"
+              checked={sessionMode === 'show-match'}
+              onChange={() => setSessionMode('show-match')}
+            />
+            Match a show (default to current data)
+          </label>
+          <label className="flex items-center gap-2">
+            <input
+              type="radio"
+              name="live-mode-session-mode"
+              checked={sessionMode === 'session-label'}
+              onChange={() => setSessionMode('session-label')}
+            />
+            Use session label
+          </label>
+          {sessionMode === 'session-label' ? (
+            <select
+              value={sessionLabel}
+              onChange={(event) => setSessionLabel(event.target.value as 'pre-show' | 'in-between-shows' | 'post-show')}
+              className="rounded-lg border border-cyan-400/40 bg-slate-900 px-2 py-1 text-xs text-cyan-100 focus:border-cyan-300 focus:outline-none"
+            >
+              <option value="pre-show">Pre Show</option>
+              <option value="in-between-shows">In Between Shows</option>
+              <option value="post-show">Post Show</option>
+            </select>
+          ) : null}
+        </div>
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <input
             type="text"
             value={liveModeShowQuery}
             onChange={(event) => setLiveModeShowQuery(event.target.value)}
             placeholder="Search by venue, city, state, or date"
+            disabled={sessionMode !== 'show-match'}
             className="min-w-[220px] flex-1 rounded-lg border border-cyan-400/40 bg-slate-900 px-3 py-2 text-sm text-cyan-100 placeholder:text-cyan-200/50 focus:border-cyan-300 focus:outline-none"
           />
           <button
             type="button"
             onClick={handleSearchLiveModeShows}
-            disabled={isSearchingShows}
+            disabled={isSearchingShows || sessionMode !== 'show-match'}
             className="rounded-lg border border-cyan-400/50 px-3 py-2 text-xs font-semibold text-cyan-100 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-60"
           >
             {isSearchingShows ? 'Searching...' : 'Find show'}
@@ -522,17 +614,24 @@ export default function LiveModeController() {
             aria-label="Live mode show start time"
           />
         </div>
-        {selectedLiveModeShow ? (
+        {sessionMode === 'session-label' ? (
+          <p className="mt-2 text-xs text-emerald-200">
+            Session label active: {sessionLabel === 'pre-show' ? 'Pre Show' : sessionLabel === 'post-show' ? 'Post Show' : 'In Between Shows'}
+          </p>
+        ) : selectedLiveModeShow ? (
           <p className="mt-2 text-xs text-emerald-200">
             Selected: {selectedLiveModeShow.date} • {selectedLiveModeShow.venueName} ({[selectedLiveModeShow.city, selectedLiveModeShow.state].filter(Boolean).join(', ')})
           </p>
         ) : (
-          <p className="mt-2 text-xs text-cyan-100/80">No session show selected yet. Photos will save without matched show metadata.</p>
+          <p className="mt-2 text-xs text-cyan-100/80">
+            No session show selected yet. Live Mode will default to current data
+            {defaultMatchedShowDate ? ` (${defaultMatchedShowDate})` : ` (${getCurrentLocalDateString()})`}.
+          </p>
         )}
         {showSearchMessage ? (
           <p className="mt-2 text-xs text-amber-200">{showSearchMessage}</p>
         ) : null}
-        {showSearchResults.length > 0 ? (
+        {sessionMode === 'show-match' && showSearchResults.length > 0 ? (
           <ul className="mt-2 space-y-2">
             {showSearchResults.map((show) => (
               <li key={`${show.date}-${show.venueName}-${show.city}-${show.state}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-2 text-xs text-cyan-100">
@@ -625,6 +724,8 @@ export default function LiveModeController() {
         <p className="mt-2 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
           Last queue error: {queueErrorSummary}
         </p>
+      ) : null}
+      </>
       ) : null}
     </section>
   );

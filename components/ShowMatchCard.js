@@ -241,13 +241,24 @@ function inferTimeContext(photoMetadata, show, setlistEntries, startTimeString =
     return null;
   }
 
+  const photoDateKey = `${photoDateTime.getFullYear()}-${String(photoDateTime.getMonth() + 1).padStart(2, '0')}-${String(photoDateTime.getDate()).padStart(2, '0')}`;
+  if (typeof show?.date === 'string' && show.date && photoDateKey !== show.date) {
+    return {
+      phase: 'outside',
+      label: 'Between Shows',
+      confidence: 'low',
+      color: 'yellow',
+      songContext: null,
+    };
+  }
+
   const diffHours = (photoDateTime.getTime() - showDate.getTime()) / (1000 * 60 * 60);
   if (Math.abs(diffHours) > 24) {
     return {
       phase: 'outside',
-      label: 'Outside ±24h of show date',
+      label: 'Between Shows',
       confidence: 'low',
-      color: 'red',
+      color: 'yellow',
       songContext: null,
     };
   }
@@ -493,6 +504,7 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
   const [snapMessage, setSnapMessage] = useState('');
   const [calibrationSource, setCalibrationSource] = useState('manual-slider');
   const [calibrationSongLabel, setCalibrationSongLabel] = useState('');
+  const [manualTimeContextOverride, setManualTimeContextOverride] = useState(null);
 
   useEffect(() => {
     setStartMinutes(parseTimeStringToMinutes(showStartTime));
@@ -540,6 +552,7 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
     () => inferTimeContext(photoMetadata, show, setlistEntries, startTime24h),
     [photoMetadata, show, setlistEntries, startTime24h]
   );
+  const effectiveTimeContext = manualTimeContextOverride || timeContext;
 
   useEffect(() => {
     if (!defaultCalibration || showStartTime !== '19:30') {
@@ -555,8 +568,8 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
   const onTimeContextChangeRef = useRef(onTimeContextChange);
   onTimeContextChangeRef.current = onTimeContextChange;
   useEffect(() => {
-    onTimeContextChangeRef.current?.(timeContext || null);
-  }, [timeContext]);
+    onTimeContextChangeRef.current?.(effectiveTimeContext || null);
+  }, [effectiveTimeContext]);
 
   const onCalibrationChangeRef = useRef(onCalibrationChange);
   onCalibrationChangeRef.current = onCalibrationChange;
@@ -573,7 +586,7 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
       matchedSongLabel: calibrationSongLabel || timeContext?.songLabel || null,
       showStartTime: startTime24h,
     });
-  }, [calibrationSource, calibrationSongLabel, timeContext?.songLabel, startTime24h]);
+  }, [calibrationSource, calibrationSongLabel, effectiveTimeContext?.songLabel, startTime24h]);
 
   const [phishInLinks, setPhishInLinks] = useState({
     showUrl: null,
@@ -646,7 +659,7 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
       error: null,
     }));
 
-    getPhishInShowLinks({ dateString: show.date, songTitle: timeContext?.songLabel || null })
+    getPhishInShowLinks({ dateString: show.date, songTitle: effectiveTimeContext?.songLabel || null })
       .then((result) => {
         if (!isActive) {
           return;
@@ -677,7 +690,7 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
     return () => {
       isActive = false;
     };
-  }, [show?.date, timeContext?.songLabel]);
+  }, [show?.date, effectiveTimeContext?.songLabel]);
 
   const applyAutoCalibration = () => {
     if (!defaultCalibration) {
@@ -693,6 +706,47 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
   const handleSnapToSong = (value) => {
     setSnapSongIndex(value);
     setSnapMessage('');
+    if (value === 'context:pre-show') {
+      setManualTimeContextOverride({
+        phase: 'pre',
+        label: 'Pre Show',
+        confidence: 'manual',
+        color: 'yellow',
+        songContext: null,
+      });
+      return;
+    }
+    if (value === 'context:post-show') {
+      setManualTimeContextOverride({
+        phase: 'post',
+        label: 'Post Show',
+        confidence: 'manual',
+        color: 'yellow',
+        songContext: null,
+      });
+      return;
+    }
+    if (value === 'context:set-break') {
+      setManualTimeContextOverride({
+        phase: 'during',
+        label: 'Set Break',
+        confidence: 'manual',
+        color: 'yellow',
+        songContext: null,
+      });
+      return;
+    }
+    if (value === 'context:between-shows') {
+      setManualTimeContextOverride({
+        phase: 'outside',
+        label: 'Between Shows',
+        confidence: 'manual',
+        color: 'yellow',
+        songContext: null,
+      });
+      return;
+    }
+    setManualTimeContextOverride(null);
 
     if (!photoTimestamp || value === '') {
       return;
@@ -770,17 +824,17 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
             <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${gpsConfidence.classes}`}>
               Location source: {sourceLabel(gpsSource)} ({gpsConfidence.label})
             </span>
-            {timeContext ? (
-              <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getColorClasses(timeContext.color)}`}>
-                {timeContext.label} ({timeContext.confidence} confidence)
+            {effectiveTimeContext ? (
+              <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-xs font-medium ${getColorClasses(effectiveTimeContext.color)}`}>
+                {effectiveTimeContext.label} ({effectiveTimeContext.confidence} confidence)
               </span>
             ) : null}
           </div>
 
-          {/* Start Time Adjuster & Visual Indicator Slider */}
+          {/* Show context selector */}
           <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-950/80 p-4">
             <p className="text-xs text-slate-300">
-              This is based on an estimated start time of: <span className="font-semibold text-cyan-300">{startTimeFormatted}</span>. Use slider to adjust.
+              Estimated show start time: <span className="font-semibold text-cyan-300">{startTimeFormatted}</span>.
             </p>
 
             {defaultCalibration ? (
@@ -789,33 +843,19 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
               </p>
             ) : null}
 
-            <div className="mt-3 flex items-center gap-3">
-              <span className="text-xs text-slate-500 font-mono">5:00 PM</span>
-              <input
-                type="range"
-                min={17 * 60} // 5:00 PM
-                max={22 * 60} // 10:00 PM
-                step={5}      // 5-minute increments
-                value={startMinutes}
-                onChange={(e) => {
-                  setStartMinutes(Number(e.target.value));
-                  setCalibrationSource('manual-slider');
-                }}
-                className="h-2 w-full cursor-pointer appearance-none rounded-lg bg-slate-800 accent-cyan-400"
-              />
-              <span className="text-xs text-slate-500 font-mono">10:00 PM</span>
-            </div>
-
             <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto]">
               <label className="text-xs text-slate-300">
-                Snap photo to song
+                Set photo context
                 <select
                   value={snapSongIndex}
                   onChange={(event) => handleSnapToSong(event.target.value)}
-                  disabled={!photoTimestamp || setlistSongTimeline.length === 0}
                   className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-2 text-sm text-white disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  <option value="">Choose a song…</option>
+                  <option value="">Auto-detect from metadata</option>
+                  <option value="context:pre-show">Pre Show</option>
+                  <option value="context:post-show">Post Show</option>
+                  <option value="context:set-break">Set Break</option>
+                  <option value="context:between-shows">Between Shows</option>
                   {setlistSongTimeline.map((song) => (
                     <option key={`snap-song-${song.index}-${song.label}`} value={song.index}>
                       {song.index + 1}. {song.label} ({song.setLabel})
@@ -830,7 +870,7 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
                 disabled={!defaultCalibration}
                 className="self-end rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                Auto-calibrate
+                Auto-calibrate start time
               </button>
             </div>
 
@@ -840,24 +880,24 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
             <div className="mt-4 flex items-center justify-between border-t border-slate-800/80 pt-3 text-xs">
               <div className="flex items-center gap-2">
                 <span className="text-slate-400">Photo Position:</span>
-                {timeContext?.phase === 'pre' && (
+                {effectiveTimeContext?.phase === 'pre' && (
                   <span className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 font-medium text-amber-300">
                     Pre-Show
                   </span>
                 )}
-                {timeContext?.phase === 'during' && (
+                {effectiveTimeContext?.phase === 'during' && (
                   <span className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 font-medium text-emerald-300">
-                    During Show ({timeContext.songLabel || 'Live'})
+                    During Show ({effectiveTimeContext.songLabel || 'Live'})
                   </span>
                 )}
-                {timeContext?.phase === 'post' && (
+                {effectiveTimeContext?.phase === 'post' && (
                   <span className="rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 font-medium text-amber-300">
                     Post-Show
                   </span>
                 )}
-                {timeContext?.phase === 'outside' && (
+                {effectiveTimeContext?.phase === 'outside' && (
                   <span className="rounded-md border border-rose-500/40 bg-rose-500/10 px-2 py-0.5 font-medium text-rose-300">
-                    Outside Show Window
+                    Between Shows
                   </span>
                 )}
               </div>
@@ -865,21 +905,21 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
           </div>
 
           {/* Song Neighborhood View (Song Before -> Song Match -> Song After) */}
-          {timeContext?.songContext && (
+          {effectiveTimeContext?.songContext && (
             <div className="mt-4 flex flex-wrap items-center gap-2 rounded-2xl border border-slate-800 bg-slate-950/80 p-3">
-              {timeContext.songContext.previous && (
-                <span className={`inline-flex items-center rounded-lg border px-2.5 py-1 text-xs opacity-75 ${getColorClasses(timeContext.songContext.previous.color)}`}>
-                  ← Prev: {timeContext.songContext.previous.label}
+              {effectiveTimeContext.songContext.previous && (
+                <span className={`inline-flex items-center rounded-lg border px-2.5 py-1 text-xs opacity-75 ${getColorClasses(effectiveTimeContext.songContext.previous.color)}`}>
+                  ← Prev: {effectiveTimeContext.songContext.previous.label}
                 </span>
               )}
 
-              <span className={`inline-flex items-center rounded-lg border px-3 py-1.5 text-xs font-semibold ${getColorClasses(timeContext.songContext.current.color)}`}>
-                Now: {timeContext.songContext.current.label}
+              <span className={`inline-flex items-center rounded-lg border px-3 py-1.5 text-xs font-semibold ${getColorClasses(effectiveTimeContext.songContext.current.color)}`}>
+                Now: {effectiveTimeContext.songContext.current.label}
               </span>
 
-              {timeContext.songContext.next && (
-                <span className={`inline-flex items-center rounded-lg border px-2.5 py-1 text-xs opacity-75 ${getColorClasses(timeContext.songContext.next.color)}`}>
-                  Next: {timeContext.songContext.next.label} →
+              {effectiveTimeContext.songContext.next && (
+                <span className={`inline-flex items-center rounded-lg border px-2.5 py-1 text-xs opacity-75 ${getColorClasses(effectiveTimeContext.songContext.next.color)}`}>
+                  Next: {effectiveTimeContext.songContext.next.label} →
                 </span>
               )}
             </div>
@@ -900,12 +940,12 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
                 Open this show on phish.in
               </a>
             ) : null}
-            {timeContext?.songLabel && phishInLinks.songUrl ? (
+            {effectiveTimeContext?.songLabel && phishInLinks.songUrl ? (
               <a href={phishInLinks.songUrl} target="_blank" rel="noreferrer" className="underline hover:text-cyan-200">
-                Open estimated song on phish.in ({phishInLinks.songTitle || timeContext.songLabel})
+                Open estimated song on phish.in ({phishInLinks.songTitle || effectiveTimeContext.songLabel})
               </a>
             ) : null}
-            {!phishInLinks.loading && !phishInLinks.error && timeContext?.songLabel && phishInLinks.showUrl && !phishInLinks.songUrl ? (
+            {!phishInLinks.loading && !phishInLinks.error && effectiveTimeContext?.songLabel && phishInLinks.showUrl && !phishInLinks.songUrl ? (
               <span className="text-slate-400">A matching track link was not found for the estimated song on phish.in.</span>
             ) : null}
             {phishInAudioMessage ? <span className="text-amber-300">{phishInAudioMessage}</span> : null}

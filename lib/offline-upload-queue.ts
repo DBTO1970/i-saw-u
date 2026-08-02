@@ -10,6 +10,8 @@ export type OfflineUploadTask = {
   matchedShowDate?: string | null;
   showStartTime?: string | null;
   showData?: Record<string, unknown> | null;
+  sessionLabel?: string | null;
+  sessionMode?: string | null;
   fileName: string;
   mimeType: string;
   createdAt: string;
@@ -27,6 +29,8 @@ export type AddOfflineUploadTaskInput = {
   matchedShowDate?: string | null;
   showStartTime?: string | null;
   showData?: Record<string, unknown> | null;
+  sessionLabel?: string | null;
+  sessionMode?: string | null;
   fileName?: string;
   mimeType?: string;
 };
@@ -193,6 +197,8 @@ export class OfflineUploadQueueManager {
       matchedShowDate: input.matchedShowDate || null,
       showStartTime: input.showStartTime || null,
       showData: input.showData || null,
+      sessionLabel: input.sessionLabel || null,
+      sessionMode: input.sessionMode || null,
       fileName: input.fileName || 'camera-photo.jpg',
       mimeType: input.mimeType || 'image/jpeg',
       createdAt: nowIso,
