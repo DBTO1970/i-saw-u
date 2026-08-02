@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '../../../lib/supabase/server';
-import { ensureGeneratedProfileIdentity } from '../../../lib/profile-identity';
 
 export async function GET(request: Request) {
   const requestUrl = new URL(request.url);
@@ -20,14 +19,6 @@ export async function GET(request: Request) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     
     if (!error) {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        try {
-          await ensureGeneratedProfileIdentity(supabase, user);
-        } catch (identityError) {
-          console.error('Profile identity generation failed:', identityError);
-        }
-      }
       const forwardedHost = request.headers.get('x-forwarded-host');
       const isLocalEnv = process.env.NODE_ENV === 'development';
 

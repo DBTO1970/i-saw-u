@@ -44,19 +44,7 @@ export default function UserNav() {
         .select('*')
         .eq('id', nextUser.id)
         .single();
-      let ensuredProfile = data || null;
-      try {
-        const identityResponse = await fetch('/api/profile/ensure-generated-identity', { method: 'POST' });
-        if (identityResponse.ok) {
-          const payload = await identityResponse.json();
-          if (payload?.success && payload?.profile) {
-            ensuredProfile = payload.profile;
-          }
-        }
-      } catch (error) {
-        console.error('Unable to ensure generated profile identity:', error);
-      }
-      setProfile(ensuredProfile);
+      setProfile(data || null);
       setProfileLoaded(true);
       setLoading(false);
     }

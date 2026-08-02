@@ -19,16 +19,51 @@ CREATE POLICY "Users can update their own profile"
   ON public.profiles FOR UPDATE USING (auth.uid() = id);
 
 -- Trigger to automatically create profile on signup/OAuth login
+CREATE OR REPLACE FUNCTION public.generate_random_profile_username()
+RETURNS TEXT AS $$
+DECLARE
+  adjective_options TEXT[] := ARRAY['cosmic','luminous','golden','velvet','electric','silver','neon','groovy','sonic','midnight','radiant','stellar','dreamy','sunset','aurora'];
+  noun_options TEXT[] := ARRAY['otter','panther','falcon','echo','groove','comet','voyager','rhythm','wave','ember','prism','pulse','sparrow','fox','drifter'];
+  candidate TEXT;
+BEGIN
+  LOOP
+    candidate := lower(
+      adjective_options[1 + floor(random() * array_length(adjective_options, 1))::INT]
+      || '-' ||
+      noun_options[1 + floor(random() * array_length(noun_options, 1))::INT]
+      || lpad((floor(random() * 1000)::INT)::TEXT, 3, '0')
+    );
+    EXIT WHEN NOT EXISTS (
+      SELECT 1
+      FROM public.profiles p
+      WHERE p.username = candidate
+    );
+  END LOOP;
+  RETURN candidate;
+END;
+$$ LANGUAGE plpgsql;
+
 CREATE OR REPLACE FUNCTION public.handle_new_user() 
 RETURNS TRIGGER AS $$
+DECLARE
+  generated_username TEXT;
 BEGIN
-  INSERT INTO public.profiles (id, username, avatar_url)
-  VALUES (
-    new.id, 
-    CONCAT('fan_', SUBSTRING(REPLACE(new.id::text, '-', '') FROM 1 FOR 12)),
-    new.raw_user_meta_data->>'avatar_url'
-  )
-  ON CONFLICT (id) DO NOTHING;
+  LOOP
+    generated_username := public.generate_random_profile_username();
+    BEGIN
+      INSERT INTO public.profiles (id, username, avatar_url)
+      VALUES (
+        new.id, 
+        generated_username,
+        new.raw_user_meta_data->>'avatar_url'
+      )
+      ON CONFLICT (id) DO NOTHING;
+      EXIT;
+    EXCEPTION
+      WHEN unique_violation THEN
+        -- Retry if a concurrent signup picked the same username.
+    END;
+  END LOOP;
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
