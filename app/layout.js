@@ -5,11 +5,9 @@ export const metadata = {
   description: 'Upload an image and inspect its EXIF metadata to compare it to the phish.net api.',
   manifest: '/manifest.json',
   icons: {
-    icon: [
-      { url: '/icons/icon-192x192.png', sizes: '192x192', type: 'image/png' },
-      { url: '/icons/icon-512x512.png', sizes: '512x512', type: 'image/png' },
-    ],
-    apple: [{ url: '/icons/apple-touch-icon-180x180.png', sizes: '180x180' }],
+    icon: [{ url: '/psychedelic_camera_lens_favicon.png', type: 'image/png' }],
+    shortcut: [{ url: '/psychedelic_camera_lens_favicon.png', type: 'image/png' }],
+    apple: [{ url: '/psychedelic_camera_lens_favicon.png', type: 'image/png' }],
   },
 };
 

@@ -12,19 +12,19 @@ export default function manifest(): MetadataRoute.Manifest {
     theme_color: '#0f172a',
     icons: [
       {
-        src: '/icons/icon-192x192.png',
-        sizes: '192x192',
-        type: 'image/png',
-        purpose: 'any',
-      },
-      {
-        src: '/icons/icon-512x512.png',
+        src: '/psychedelic_camera_lens_favicon.png',
         sizes: '512x512',
         type: 'image/png',
         purpose: 'any',
       },
       {
-        src: '/icons/icon-512x512-maskable.png',
+        src: '/psychedelic_camera_lens_favicon.png',
+        sizes: '512x512',
+        type: 'image/png',
+        purpose: 'any',
+      },
+      {
+        src: '/psychedelic_camera_lens_favicon.png',
         sizes: '512x512',
         type: 'image/png',
         purpose: 'maskable',

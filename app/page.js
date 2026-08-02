@@ -3,6 +3,7 @@ import ShowMatchPanel from '../components/ShowMatchPanel';
 import UserNav from '../components/UserNav';
 import ClientErrorBoundary from '../components/ClientErrorBoundary';
 import { cookies } from 'next/headers';
+import Image from 'next/image';
 
 export const dynamic = 'force-dynamic';
 
@@ -87,9 +88,19 @@ export default async function HomePage({ searchParams }) {
         
         {/* Top Header with Brand & UserNav */}
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-slate-800/80 pb-4 sm:mb-8 sm:pb-6">
-          <div className="space-y-1">
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-400 sm:text-sm sm:tracking-[0.35em]">i-saw-u</p>
-            <h1 className="text-xl font-bold leading-tight text-white sm:text-2xl md:text-3xl">EXIF & Concert Matcher</h1>
+          <div className="flex items-center gap-3 sm:gap-4">
+            <Image
+              src="/psychedelic_camera_lens.svg"
+              alt="I Saw U logo"
+              width={54}
+              height={54}
+              className="h-12 w-12 rounded-full border border-cyan-500/30 bg-slate-950/80 p-1 shadow-lg shadow-cyan-900/20 sm:h-14 sm:w-14"
+              priority
+            />
+            <div className="space-y-1">
+              <p className="text-xs font-semibold uppercase tracking-[0.28em] text-cyan-400 sm:text-sm sm:tracking-[0.35em]">i-saw-u</p>
+              <h1 className="text-xl font-bold leading-tight text-white sm:text-2xl md:text-3xl">EXIF & Concert Matcher</h1>
+            </div>
           </div>
           <UserNav />
         </div>
