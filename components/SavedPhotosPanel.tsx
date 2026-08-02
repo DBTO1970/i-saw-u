@@ -5,10 +5,16 @@ import Link from 'next/link';
 import LibraryPhotoDeleteButton from './LibraryPhotoDeleteButton';
 import PhotoVisibilityToggle from './PhotoVisibilityToggle';
 import { groupPhotosByYearAndShow } from '../lib/photo-grouping';
+import { deriveCurrentSongLabelFromShowMetadata, normalizeTimeContextLabel } from '../lib/photo-show-context';
 import { useSortedList } from '../lib/useSortedList';
 
 type SavedPhoto = Record<string, unknown>;
-type MappedPhoto = SavedPhoto & { exifShowDate: string | null; dateSaved: string | null };
+type MappedPhoto = SavedPhoto & {
+  exifShowDate: string | null;
+  dateSaved: string | null;
+  currentSong: string | null;
+  timeContextLabel: string | null;
+};
 
 type SavedPhotosPanelProps = {
   photos: SavedPhoto[];
@@ -18,11 +24,39 @@ type SavedPhotosPanelProps = {
 export default function SavedPhotosPanel({ photos, photosError }: SavedPhotosPanelProps) {
   const mappedPhotos = useMemo(
     (): MappedPhoto[] =>
-      photos.map((photo) => ({
-        ...photo,
-        exifShowDate: (photo.matched_show_date as string | null) ?? null,
-        dateSaved: (photo.created_at as string | null) ?? null,
-      })),
+      photos.map((photo) => {
+        const rawExifValue = photo.raw_exif;
+        const rawExif =
+          typeof rawExifValue === 'string'
+            ? (() => {
+                try {
+                  const parsed = JSON.parse(rawExifValue);
+                  return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+                } catch {
+                  return {};
+                }
+              })()
+            : rawExifValue && typeof rawExifValue === 'object' && !Array.isArray(rawExifValue)
+              ? rawExifValue
+              : {};
+        const showMetadata =
+          rawExif.showMetadata && typeof rawExif.showMetadata === 'object' && !Array.isArray(rawExif.showMetadata)
+            ? rawExif.showMetadata
+            : null;
+        const currentSong = deriveCurrentSongLabelFromShowMetadata(showMetadata, rawExif) || null;
+        const timeContextLabel =
+          normalizeTimeContextLabel(
+            (showMetadata?.timeContextLabel as string | undefined) || (rawExif.timeContextLabel as string | undefined) || '',
+          ) || null;
+
+        return {
+          ...photo,
+          exifShowDate: (photo.matched_show_date as string | null) ?? null,
+          dateSaved: (photo.created_at as string | null) ?? null,
+          currentSong,
+          timeContextLabel,
+        };
+      }),
     [photos],
   );
 
