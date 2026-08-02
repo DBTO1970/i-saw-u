@@ -234,6 +234,42 @@ function buildSongTimeline(entries, showStart) {
   return { segments, durationCoverage };
 }
 
+function buildSetBreakWindow(showDate, startTimeString, setlistEntries) {
+  if (typeof showDate !== 'string' || !showDate) {
+    return null;
+  }
+
+  const showStart = new Date(`${showDate}T${startTimeString}:00`);
+  if (Number.isNaN(showStart.getTime())) {
+    return null;
+  }
+
+  const { segments } = buildSongTimeline(setlistEntries, showStart);
+  const songSegments = segments.filter((segment) => segment.type === 'song');
+  const showEnd = songSegments.length > 0
+    ? songSegments[songSegments.length - 1].end
+    : new Date(showStart.getTime() + 2 * 60 * 60 * 1000);
+
+  if (!(showEnd instanceof Date) || Number.isNaN(showEnd.getTime()) || showEnd.getTime() <= showStart.getTime()) {
+    return null;
+  }
+
+  const midpointMs = Math.floor((showStart.getTime() + showEnd.getTime()) / 2);
+  let inferredTimestamp = new Date(midpointMs);
+  if (inferredTimestamp.getTime() <= showStart.getTime()) {
+    inferredTimestamp = new Date(showStart.getTime() + 60 * 1000);
+  }
+  if (inferredTimestamp.getTime() >= showEnd.getTime()) {
+    inferredTimestamp = new Date(showEnd.getTime() - 60 * 1000);
+  }
+
+  return {
+    startIso: showStart.toISOString(),
+    endIso: showEnd.toISOString(),
+    inferredTimestampIso: inferredTimestamp.toISOString(),
+  };
+}
+
 function inferTimeContext(photoMetadata, show, setlistEntries, startTimeString = '19:30') {
   const photoDateTime = parsePhotoDateTime(photoMetadata);
   const showDate = parseShowDate(show);
@@ -727,12 +763,14 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
       return;
     }
     if (value === 'context:set-break') {
+      const setBreakWindow = buildSetBreakWindow(show?.date, startTime24h, setlistEntries);
       setManualTimeContextOverride({
         phase: 'during',
         label: 'Set Break',
         confidence: 'manual',
         color: 'yellow',
         songContext: null,
+        setBreakWindow,
       });
       return;
     }
@@ -885,7 +923,12 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
                     Pre-Show
                   </span>
                 )}
-                {effectiveTimeContext?.phase === 'during' && (
+                {effectiveTimeContext?.phase === 'during' && effectiveTimeContext?.label === 'Set Break' && (
+                  <span className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 font-medium text-emerald-300">
+                    Set Break
+                  </span>
+                )}
+                {effectiveTimeContext?.phase === 'during' && effectiveTimeContext?.label !== 'Set Break' && (
                   <span className="rounded-md border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 font-medium text-emerald-300">
                     During Show ({effectiveTimeContext.songLabel || 'Live'})
                   </span>

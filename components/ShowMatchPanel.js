@@ -832,7 +832,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
               setShowStartTime(nextTime);
             }}
             onTimeContextChange={(context) => {
-              setCurrentSongLabel(context?.songLabel || '');
+              setCurrentSongLabel(context?.songLabel || (context?.label === 'Set Break' ? 'Set Break' : ''));
               setTimeContextLabel(context?.label || '');
             }}
             onCalibrationChange={(nextCalibrationMetadata) => {
