@@ -11,7 +11,7 @@ i-saw-u is a Next.js web app for exploring concert and event photos by matching 
 - Let signed-in users save photos and matches to a personal library
 
 ## Future development
-- create "Show" mode which allows user to open camera in app, load show info, start time, and app will add song ibfo as photos are taken. 
+- create "Show" mode which allows user to open camera in app, load show info, start time, and app will add song info as photos are taken. 
 ## Tech stack
 
 - Next.js 14 (App Router)
