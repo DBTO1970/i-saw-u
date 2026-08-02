@@ -8,6 +8,14 @@ export interface OptimizeImageOptions {
   quality?: number; // 0.0 to 1.0
 }
 
+export interface AdaptiveWebPOptions {
+  targetMaxBytes?: number;
+  maxWidth?: number;
+  maxHeight?: number;
+  qualitySteps?: number[];
+  dimensionScales?: number[];
+}
+
 export async function convertToWebP(
   file: File | Blob,
   options: OptimizeImageOptions = {}
@@ -74,4 +82,70 @@ export async function convertToWebP(
 
     img.src = objectUrl;
   });
+}
+
+export async function convertToAdaptiveWebP(
+  file: File | Blob,
+  options: AdaptiveWebPOptions = {}
+): Promise<{
+  webpBlob: Blob;
+  width: number;
+  height: number;
+  originalName: string;
+  appliedQuality: number;
+  appliedMaxWidth: number;
+  appliedMaxHeight: number;
+}> {
+  const {
+    targetMaxBytes = 1_900_000,
+    maxWidth = 1920,
+    maxHeight = 1920,
+    qualitySteps = [0.85, 0.78, 0.72, 0.66, 0.6, 0.54, 0.48, 0.42],
+    dimensionScales = [1, 0.9, 0.8, 0.7, 0.6],
+  } = options;
+
+  let bestResult: { webpBlob: Blob; width: number; height: number; originalName: string } | null = null;
+  let bestQuality = qualitySteps[0] || 0.85;
+  let bestWidth = maxWidth;
+  let bestHeight = maxHeight;
+
+  for (const scale of dimensionScales) {
+    const scaledWidth = Math.max(640, Math.round(maxWidth * scale));
+    const scaledHeight = Math.max(640, Math.round(maxHeight * scale));
+
+    for (const quality of qualitySteps) {
+      const result = await convertToWebP(file, {
+        maxWidth: scaledWidth,
+        maxHeight: scaledHeight,
+        quality,
+      });
+
+      if (!bestResult || result.webpBlob.size < bestResult.webpBlob.size) {
+        bestResult = result;
+        bestQuality = quality;
+        bestWidth = scaledWidth;
+        bestHeight = scaledHeight;
+      }
+
+      if (result.webpBlob.size <= targetMaxBytes) {
+        return {
+          ...result,
+          appliedQuality: quality,
+          appliedMaxWidth: scaledWidth,
+          appliedMaxHeight: scaledHeight,
+        };
+      }
+    }
+  }
+
+  if (!bestResult) {
+    throw new Error('Adaptive WebP conversion failed to produce an output image.');
+  }
+
+  return {
+    ...bestResult,
+    appliedQuality: bestQuality,
+    appliedMaxWidth: bestWidth,
+    appliedMaxHeight: bestHeight,
+  };
 }

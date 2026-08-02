@@ -134,28 +134,51 @@ export async function savePhotoToLibrary(formData) {
       : null;
     const rawExifJson = formData.get('rawExif') || '{}';
     const parsedRawExif = applyShowMetadata(JSON.parse(rawExifJson), matchedShowDate, showStartTime);
+    const directStoragePath = formData.get('storagePath');
+    const directPhotoId = formData.get('photoId');
+    const directMimeType = formData.get('mimeType');
+    const directFileSizeRaw = formData.get('fileSize');
 
-    if (!file || typeof file === 'string') {
-      return { success: false, error: 'No image file provided.' };
+    const hasServerUploadFile = file && typeof file !== 'string';
+    const hasDirectUploadMetadata = typeof directStoragePath === 'string' && typeof directPhotoId === 'string';
+
+    if (!hasServerUploadFile && !hasDirectUploadMetadata) {
+      return { success: false, error: 'No image file or direct upload metadata provided.' };
     }
 
-    const photoId = crypto.randomUUID();
-    const storagePath = `${user.id}/${photoId}.webp`;
+    let photoId = hasDirectUploadMetadata ? directPhotoId : crypto.randomUUID();
+    let storagePath = hasDirectUploadMetadata ? directStoragePath : `${user.id}/${photoId}.webp`;
+    let mimeType = hasDirectUploadMetadata && typeof directMimeType === 'string' && directMimeType.trim()
+      ? directMimeType.trim()
+      : 'image/webp';
+    let fileSize = null;
 
-    // 1. Upload to Supabase Storage bucket 'user-photos'
-    const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
+    if (!storagePath.startsWith(`${user.id}/`)) {
+      return { success: false, error: 'Invalid storage path for authenticated user.' };
+    }
 
-    const { error: uploadError } = await supabase.storage
-      .from('user-photos')
-      .upload(storagePath, buffer, {
-        contentType: 'image/webp',
-        upsert: true,
-      });
+    if (hasServerUploadFile) {
+      // Legacy path: server-side upload through Vercel route.
+      const arrayBuffer = await file.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
 
-    if (uploadError) {
-      console.error('Storage Upload Error:', uploadError);
-      return { success: false, error: uploadError.message };
+      const { error: uploadError } = await supabase.storage
+        .from('user-photos')
+        .upload(storagePath, buffer, {
+          contentType: 'image/webp',
+          upsert: true,
+        });
+
+      if (uploadError) {
+        console.error('Storage Upload Error:', uploadError);
+        return { success: false, error: uploadError.message };
+      }
+
+      fileSize = buffer.length;
+      mimeType = 'image/webp';
+    } else {
+      const parsedSize = Number(directFileSizeRaw);
+      fileSize = Number.isFinite(parsedSize) && parsedSize > 0 ? parsedSize : null;
     }
 
     const baseInsertPayload = {
@@ -163,8 +186,8 @@ export async function savePhotoToLibrary(formData) {
       user_id: user.id,
       storage_path: storagePath,
       file_name: fileName,
-      file_size: buffer.length,
-      mime_type: 'image/webp',
+      file_size: fileSize,
+      mime_type: mimeType,
       date_taken: toNullableDate(dateTaken),
       time_taken: toNullableTime(timeTaken),
       gps_latitude: gpsLatitudeRaw ? (Number.isFinite(parseFloat(gpsLatitudeRaw)) ? parseFloat(gpsLatitudeRaw) : null) : null,

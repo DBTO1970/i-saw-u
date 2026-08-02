@@ -1,9 +1,10 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { convertToWebP } from '../lib/image-optimizer';
+import { convertToAdaptiveWebP } from '../lib/image-optimizer';
 import { capturePhotoWithNativeCamera } from '../lib/native-camera-photo';
 import { extractExifFromLocalImageUri } from '../lib/local-image-exif';
+import { createClient as createSupabaseClient } from '../lib/supabase/client';
 import {
   createOfflineUploadQueueManager,
   type OfflineUploadQueueManager,
@@ -19,15 +20,36 @@ async function uploadQueuedPhoto(task: OfflineUploadTask): Promise<void> {
   }
 
   const localBlob = await localResponse.blob();
-  const { webpBlob, originalName } = await convertToWebP(localBlob, {
+  const { webpBlob, originalName, appliedMaxHeight, appliedMaxWidth, appliedQuality } = await convertToAdaptiveWebP(localBlob, {
+    targetMaxBytes: 1_900_000,
     maxWidth: 1920,
     maxHeight: 1920,
-    quality: 0.85,
   });
 
+  const supabase = createSupabaseClient();
+  const { data: { user }, error: userError } = await supabase.auth.getUser();
+  if (userError || !user) {
+    throw new Error('You must be signed in to upload live-mode photos.');
+  }
+
+  const photoId = crypto.randomUUID();
+  const storagePath = `${user.id}/${photoId}.webp`;
+  const storageUpload = await supabase.storage
+    .from('user-photos')
+    .upload(storagePath, webpBlob, {
+      contentType: 'image/webp',
+      upsert: true,
+    });
+
+  if (storageUpload.error) {
+    throw new Error(storageUpload.error.message || 'Failed to upload live-mode photo to storage.');
+  }
+
   const formData = new FormData();
-  const webpFile = new File([webpBlob], originalName.replace(/\.[^/.]+$/, '') + '.webp', { type: 'image/webp' });
-  formData.append('file', webpFile);
+  formData.append('photoId', photoId);
+  formData.append('storagePath', storagePath);
+  formData.append('fileSize', String(webpBlob.size));
+  formData.append('mimeType', 'image/webp');
   formData.append('fileName', task.fileName || originalName);
   formData.append('dateTaken', task.exifMetadata.dateTimeOriginal || '');
   formData.append('timeTaken', task.exifMetadata.timeTaken || '');
@@ -44,6 +66,14 @@ async function uploadQueuedPhoto(task: OfflineUploadTask): Promise<void> {
     JSON.stringify({
       ...task.exifMetadata,
       source: 'live-mode',
+      compressionMetadata: {
+        format: 'image/webp',
+        targetMaxBytes: 1_900_000,
+        outputBytes: webpBlob.size,
+        appliedQuality,
+        appliedMaxWidth,
+        appliedMaxHeight,
+      },
     }),
   );
 
@@ -51,7 +81,10 @@ async function uploadQueuedPhoto(task: OfflineUploadTask): Promise<void> {
     method: 'POST',
     body: formData,
   });
-  const payload = await response.json();
+  const contentType = response.headers.get('content-type') || '';
+  const payload = contentType.includes('application/json')
+    ? await response.json()
+    : { success: false, error: await response.text() };
   if (!response.ok || !payload?.success) {
     throw new Error(payload?.error || 'Failed to upload queued live-mode photo.');
   }

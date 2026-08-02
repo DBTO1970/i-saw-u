@@ -2,9 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ExifReader from 'exifreader';
-import { convertToWebP } from '../lib/image-optimizer';
+import { convertToAdaptiveWebP } from '../lib/image-optimizer';
 import { capturePhotoWithNativeCamera } from '../lib/native-camera-photo';
 import { sendClientDiagnostic, withClientDiagnosticError } from '../lib/client-diagnostics';
+import { createClient as createSupabaseClient } from '../lib/supabase/client';
 
 const emptyMetadata = {
   dateTimeOriginal: 'Not available',
@@ -129,6 +130,19 @@ function logSavePipelineDiagnostic(stage, file, details = {}, error = null) {
     source: 'image-exif-uploader',
     details: payload,
   });
+}
+
+async function parseSaveResponse(response) {
+  const contentType = response.headers.get('content-type') || '';
+  if (contentType.includes('application/json')) {
+    return response.json();
+  }
+
+  const text = await response.text();
+  return {
+    success: false,
+    error: text || `Upload failed with status ${response.status}.`,
+  };
 }
 
 function pad2(value) {
@@ -728,31 +742,63 @@ export default function ImageExifUploader({
     try {
       let webpBlob;
       let originalName;
+      let appliedQuality = 0.85;
+      let appliedMaxWidth = 1920;
+      let appliedMaxHeight = 1920;
       try {
         // 1. Client-side WebP optimization
-        const converted = await convertToWebP(sourceFile, {
+        const converted = await convertToAdaptiveWebP(sourceFile, {
+          targetMaxBytes: 1_900_000,
           maxWidth: 1920,
           maxHeight: 1920,
-          quality: 0.85,
         });
         webpBlob = converted.webpBlob;
         originalName = converted.originalName;
+        appliedQuality = converted.appliedQuality;
+        appliedMaxWidth = converted.appliedMaxWidth;
+        appliedMaxHeight = converted.appliedMaxHeight;
       } catch (convertError) {
         logSavePipelineDiagnostic('convert-failed', sourceFile, {
           maxWidth: 1920,
           maxHeight: 1920,
-          quality: 0.85,
+          targetMaxBytes: 1_900_000,
         }, convertError);
         throw convertError;
       }
 
+      const supabase = createSupabaseClient();
+      const { data: { user }, error: userError } = await supabase.auth.getUser();
+      if (userError || !user) {
+        throw new Error('You must be signed in to save photos to your library.');
+      }
+
+      const photoId = crypto.randomUUID();
+      const storagePath = `${user.id}/${photoId}.webp`;
+
       let formData;
       try {
-        // 2. Build FormData
-        formData = new FormData();
-        const webpFile = new File([webpBlob], originalName.replace(/\.[^/.]+$/, '') + '.webp', { type: 'image/webp' });
+        const uploadResult = await supabase.storage
+          .from('user-photos')
+          .upload(storagePath, webpBlob, {
+            contentType: 'image/webp',
+            upsert: true,
+          });
 
-        formData.append('file', webpFile);
+        if (uploadResult.error) {
+          logSavePipelineDiagnostic('upload-failed', sourceFile, {
+            phase: 'direct-storage-upload',
+            storagePath,
+            message: uploadResult.error.message || null,
+          }, uploadResult.error);
+          throw new Error(uploadResult.error.message || 'Failed to upload photo to storage.');
+        }
+
+        // 2. Build metadata FormData for API (no binary file payload)
+        formData = new FormData();
+        formData.append('photoId', photoId);
+        formData.append('storagePath', storagePath);
+        formData.append('fileSize', String(webpBlob.size));
+        formData.append('mimeType', 'image/webp');
         formData.append('fileName', selectedFileName || originalName);
         formData.append('dateTaken', metadata.dateTimeOriginal || '');
         formData.append('timeTaken', metadata.timeTaken || '');
@@ -776,6 +822,14 @@ export default function ImageExifUploader({
           'rawExif',
           JSON.stringify({
             ...metadataForSave,
+            compressionMetadata: {
+              format: 'image/webp',
+              targetMaxBytes: 1_900_000,
+              outputBytes: webpBlob.size,
+              appliedQuality,
+              appliedMaxWidth,
+              appliedMaxHeight,
+            },
             showMetadata: {
               matchedShowDate: matchedShowDate || null,
               showStartTime: showStartTime || null,
@@ -814,6 +868,13 @@ export default function ImageExifUploader({
           method: 'POST',
           body: formData,
         });
+        if (response.status === 413) {
+          logSavePipelineDiagnostic('upload-failed', sourceFile, {
+            phase: 'metadata-request',
+            status: 413,
+          });
+          throw new Error('Upload payload was too large for the server. Please try again with a smaller image.');
+        }
       } catch (uploadError) {
         logSavePipelineDiagnostic('upload-failed', sourceFile, {
           phase: 'request',
@@ -823,7 +884,7 @@ export default function ImageExifUploader({
 
       let res;
       try {
-        res = await response.json();
+        res = await parseSaveResponse(response);
       } catch (uploadError) {
         logSavePipelineDiagnostic('upload-failed', sourceFile, {
           phase: 'response-json',
