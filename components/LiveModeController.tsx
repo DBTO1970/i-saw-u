@@ -305,7 +305,14 @@ export default function LiveModeController() {
     }
 
     try {
-      setStatusMessage('Processing queued uploads...');
+      const currentStats = queueManager.getStats();
+      if (currentStats.pending === 0 && currentStats.failed > 0) {
+        queueManager.retryFailedTasks();
+        setStatusMessage('Retrying failed queue uploads...');
+      } else {
+        setStatusMessage('Processing queued uploads...');
+      }
+
       await queueManager.processPendingTasks();
       const nextStats = queueManager.getStats();
       if (nextStats.pending === 0 && nextStats.failed === 0) {
@@ -507,7 +514,7 @@ export default function LiveModeController() {
         </button>
         <button
           type="button"
-          disabled={!queueManager || queueStats.pending === 0 || queueStats.processing > 0}
+          disabled={!queueManager || (queueStats.pending === 0 && queueStats.failed === 0) || queueStats.processing > 0}
           onClick={handleProcessQueueNow}
           className="rounded-xl border border-cyan-400/50 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-60"
         >
