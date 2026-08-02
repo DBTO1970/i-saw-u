@@ -25,11 +25,11 @@ export default function FavoritesPanel({ photos, photosError }: FavoritesPanelPr
     [photos],
   );
 
-  const { sortedData, SortControlComponent } = useSortedList(mappedPhotos, 'dateSaved');
+  const { sortedData, sortBy, SortControlComponent } = useSortedList(mappedPhotos, 'dateSaved');
 
   const groupedFavoritePhotos = useMemo(
-    () => groupPhotosByYearAndShow(sortedData),
-    [sortedData],
+    () => (sortBy === 'dateSaved' ? [] : groupPhotosByYearAndShow(sortedData)),
+    [sortedData, sortBy],
   );
 
   const defaultFavoritesYear = groupedFavoritePhotos[0]?.year || null;
@@ -42,10 +42,58 @@ export default function FavoritesPanel({ photos, photosError }: FavoritesPanelPr
     );
   }
 
-  if (groupedFavoritePhotos.length === 0) {
+  if (sortedData.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-slate-800 p-8 text-center text-slate-400">
         No liked photos yet.
+      </div>
+    );
+  }
+
+  const renderPhotoCard = (photo: Record<string, unknown>) => {
+    const creator = photo.creator as Record<string, unknown> | null;
+    const creatorName = (creator?.display_name as string) || (creator?.username as string) || 'Anonymous';
+    return (
+      <div key={photo.id as string} className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60 transition-all hover:border-rose-500/30">
+        {photo.url ? (
+          <div className="relative aspect-square w-full overflow-hidden bg-slate-900">
+            <img src={photo.url as string} alt={(photo.file_name as string) || 'Fan photo'} className="h-full w-full object-cover" />
+          </div>
+        ) : (
+          <div className="flex aspect-square w-full items-center justify-center bg-slate-900 text-xs text-slate-500">
+            Photo unavailable
+          </div>
+        )}
+        <div className="space-y-2 p-4">
+          <p className="truncate text-xs font-medium text-cyan-300">
+            🎵 {(photo.currentSong as string) || 'Unknown'}
+          </p>
+          {photo.timeContextLabel ? (
+            <p className="truncate text-[11px] text-slate-500">Context: {photo.timeContextLabel as string}</p>
+          ) : null}
+          <div className="flex items-center justify-between gap-3">
+            <p className="truncate text-xs text-slate-400">By {creatorName}</p>
+            <PhotoLikeButton
+              photoId={photo.id as string}
+              initialLikeCount={photo.like_count as number}
+              initialLikedByMe={true}
+              size="sm"
+            />
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  if (sortBy === 'dateSaved') {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-end">
+          {SortControlComponent}
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {sortedData.map((photo) => renderPhotoCard(photo as Record<string, unknown>))}
+        </div>
       </div>
     );
   }
@@ -86,40 +134,7 @@ export default function FavoritesPanel({ photos, photosError }: FavoritesPanelPr
                   ) : null}
                 </div>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {group.photos.map((photo: Record<string, unknown>) => {
-                    const creator = photo.creator as Record<string, unknown> | null;
-                    const creatorName = (creator?.display_name as string) || (creator?.username as string) || 'Anonymous';
-                    return (
-                      <div key={photo.id as string} className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60 transition-all hover:border-rose-500/30">
-                        {photo.url ? (
-                          <div className="relative aspect-square w-full overflow-hidden bg-slate-900">
-                            <img src={photo.url as string} alt={(photo.file_name as string) || 'Fan photo'} className="h-full w-full object-cover" />
-                          </div>
-                        ) : (
-                          <div className="flex aspect-square w-full items-center justify-center bg-slate-900 text-xs text-slate-500">
-                            Photo unavailable
-                          </div>
-                        )}
-                        <div className="space-y-2 p-4">
-                          <p className="truncate text-xs font-medium text-cyan-300">
-                            🎵 {(photo.currentSong as string) || 'Unknown'}
-                          </p>
-                          {photo.timeContextLabel ? (
-                            <p className="truncate text-[11px] text-slate-500">Context: {photo.timeContextLabel as string}</p>
-                          ) : null}
-                          <div className="flex items-center justify-between gap-3">
-                            <p className="truncate text-xs text-slate-400">By {creatorName}</p>
-                            <PhotoLikeButton
-                              photoId={photo.id as string}
-                              initialLikeCount={photo.like_count as number}
-                              initialLikedByMe={true}
-                              size="sm"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {group.photos.map((photo: Record<string, unknown>) => renderPhotoCard(photo))}
                 </div>
               </div>
             ))}

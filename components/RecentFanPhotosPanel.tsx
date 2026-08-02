@@ -35,9 +35,9 @@ export default function RecentFanPhotosPanel({ shows, bookmarkedShowDates, error
     [shows],
   );
 
-  const { sortedData, SortControlComponent } = useSortedList(mappedShows, 'showDate');
+  const { sortedData, sortBy, SortControlComponent } = useSortedList(mappedShows, 'showDate');
 
-  const groupedShows = useMemo(() => groupShowsByYear(sortedData), [sortedData]);
+  const groupedShows = useMemo(() => (sortBy === 'dateSaved' ? [] : groupShowsByYear(sortedData)), [sortedData, sortBy]);
 
   const defaultYear = groupedShows[0]?.[0] || null;
 
@@ -49,10 +49,49 @@ export default function RecentFanPhotosPanel({ shows, bookmarkedShowDates, error
     );
   }
 
-  if (groupedShows.length === 0) {
+  if (sortedData.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-slate-800 p-8 text-center text-slate-400">
         No public fan photos from other users yet.
+      </div>
+    );
+  }
+
+  const renderShowCard = (show: MappedShow) => {
+    const isBookmarked = bookmarkedSet.has(show.show_date as string);
+    return (
+      <Link key={show.show_date as string} href={`/library/show/${show.show_date as string}`} className="block rounded-2xl border border-slate-800 bg-slate-900/70 p-4 transition-all hover:border-cyan-500/40">
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-xs font-bold text-cyan-400">{(show.show_date as string) || 'Unknown date'}</p>
+              {isBookmarked ? (
+                <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+                  Bookmarked
+                </span>
+              ) : null}
+            </div>
+            <p className="mt-0.5 truncate text-base font-semibold text-white">{(show.venue_name as string) || 'Venue Unknown'}</p>
+            {show.location ? <p className="truncate text-xs text-slate-400">{show.location as string}</p> : null}
+          </div>
+          <span className="shrink-0 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-1 text-[11px] font-semibold text-cyan-200">
+            +{show.new_public_photo_count as number} {(show.new_public_photo_count as number) === 1 ? 'photo' : 'photos'}
+          </span>
+        </div>
+        <p className="mt-2 text-xs text-slate-400">Latest: {formatRecentFanPhotoTimestamp(show.latest_public_photo_at as string)}</p>
+      </Link>
+    );
+  };
+
+  if (sortBy === 'dateSaved') {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center justify-end">
+          {SortControlComponent}
+        </div>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {sortedData.map((show) => renderShowCard(show))}
+        </div>
       </div>
     );
   }
@@ -72,31 +111,7 @@ export default function RecentFanPhotosPanel({ shows, bookmarkedShowDates, error
             </div>
           </summary>
           <div className="grid grid-cols-1 gap-4 border-t border-slate-800 p-4 sm:grid-cols-2">
-            {yearShows.map((show) => {
-              const isBookmarked = bookmarkedSet.has(show.show_date as string);
-              return (
-                <Link key={show.show_date as string} href={`/library/show/${show.show_date as string}`} className="block rounded-2xl border border-slate-800 bg-slate-900/70 p-4 transition-all hover:border-cyan-500/40">
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <p className="text-xs font-bold text-cyan-400">{(show.show_date as string) || 'Unknown date'}</p>
-                        {isBookmarked ? (
-                          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
-                            Bookmarked
-                          </span>
-                        ) : null}
-                      </div>
-                      <p className="mt-0.5 truncate text-base font-semibold text-white">{(show.venue_name as string) || 'Venue Unknown'}</p>
-                      {show.location ? <p className="truncate text-xs text-slate-400">{show.location as string}</p> : null}
-                    </div>
-                    <span className="shrink-0 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-1 text-[11px] font-semibold text-cyan-200">
-                      +{show.new_public_photo_count as number} {(show.new_public_photo_count as number) === 1 ? 'photo' : 'photos'}
-                    </span>
-                  </div>
-                  <p className="mt-2 text-xs text-slate-400">Latest: {formatRecentFanPhotoTimestamp(show.latest_public_photo_at as string)}</p>
-                </Link>
-              );
-            })}
+            {yearShows.map((show) => renderShowCard(show))}
           </div>
         </details>
       ))}
