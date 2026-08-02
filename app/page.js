@@ -119,6 +119,18 @@ export default async function HomePage({ searchParams }) {
                 Sign in with Google or GitHub to save uploaded WebP photos and matched show details directly to your personal library!
               </p>
               <p className="text-xs text-slate-400 sm:text-sm">
+                By using this app, you agree to the{' '}
+                <a
+                  href="/terms"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-cyan-400 underline decoration-cyan-500/30 underline-offset-4 transition-colors hover:text-cyan-300"
+                >
+                  Terms of Use
+                </a>
+                .
+              </p>
+              <p className="text-xs text-slate-400 sm:text-sm">
                 Want to explore the code, share feedback, or contribute? Visit the{' '}
                 <a
                   href="https://github.com/DBTO1970/i-saw-u"
