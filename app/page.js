@@ -1,6 +1,7 @@
 import { getShowByDate } from './actions/shows';
 import ShowMatchPanel from '../components/ShowMatchPanel';
 import UserNav from '../components/UserNav';
+import ClientErrorBoundary from '../components/ClientErrorBoundary';
 import { cookies } from 'next/headers';
 
 export const dynamic = 'force-dynamic';
@@ -133,16 +134,18 @@ export default async function HomePage({ searchParams }) {
           </details>
         </div>
 
-        <ShowMatchPanel
-          initialPhotoMetadata={initialPhotoMetadata}
-          initialShowResult={showResult}
-          initialSharedPhoto={sharedPhotoPayload
-            ? {
-              fileName: sharedPhotoPayload.fileName || 'Shared photo',
-              receivedAt: sharedPhotoPayload.receivedAt || null,
-            }
-            : null}
-        />
+        <ClientErrorBoundary context="home-show-match-panel">
+          <ShowMatchPanel
+            initialPhotoMetadata={initialPhotoMetadata}
+            initialShowResult={showResult}
+            initialSharedPhoto={sharedPhotoPayload
+              ? {
+                fileName: sharedPhotoPayload.fileName || 'Shared photo',
+                receivedAt: sharedPhotoPayload.receivedAt || null,
+              }
+              : null}
+          />
+        </ClientErrorBoundary>
         <p className="mt-8 text-xs text-slate-500">&copy; 2026 Don Barto Jr.</p>
       </div>
     </main>
