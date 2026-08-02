@@ -15,6 +15,8 @@ export interface Database {
           username: string | null;
           display_name: string | null;
           avatar_url: string | null;
+          terms_accepted_at: string | null;
+          terms_accepted_version: string | null;
           updated_at: string;
         };
         Insert: {
@@ -22,6 +24,8 @@ export interface Database {
           username?: string | null;
           display_name?: string | null;
           avatar_url?: string | null;
+          terms_accepted_at?: string | null;
+          terms_accepted_version?: string | null;
           updated_at?: string;
         };
         Update: {
@@ -29,6 +33,8 @@ export interface Database {
           username?: string | null;
           display_name?: string | null;
           avatar_url?: string | null;
+          terms_accepted_at?: string | null;
+          terms_accepted_version?: string | null;
           updated_at?: string;
         };
       };

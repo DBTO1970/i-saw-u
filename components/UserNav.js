@@ -5,12 +5,17 @@ import { createClient } from '../lib/supabase/client';
 import Link from 'next/link';
 import AccountCleanupControls from './AccountCleanupControls';
 
+const TERMS_VERSION = '2026-08-02';
+
 export default function UserNav() {
   const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [profileLoaded, setProfileLoaded] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
+  const [isAcceptingTerms, setIsAcceptingTerms] = useState(false);
+  const [termsError, setTermsError] = useState('');
 
   const supabase = createClient();
 
@@ -23,26 +28,31 @@ export default function UserNav() {
   };
 
   useEffect(() => {
-    async function getUser() {
-      const { data: { user } } = await supabase.auth.getUser();
-      setUser(user || null);
+    async function loadUserAndProfile(sessionUser = null) {
+      const nextUser = sessionUser || (await supabase.auth.getUser()).data?.user || null;
+      setUser(nextUser);
 
-      if (user) {
-        const { data } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .single();
-        setProfile(data || null);
+      if (!nextUser) {
+        setProfile(null);
+        setProfileLoaded(true);
+        setLoading(false);
+        return;
       }
+
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', nextUser.id)
+        .single();
+      setProfile(data || null);
+      setProfileLoaded(true);
       setLoading(false);
     }
 
-    getUser();
+    loadUserAndProfile();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user || null);
-      setLoading(false);
+      void loadUserAndProfile(session?.user || null);
     });
 
     return () => {
@@ -74,6 +84,35 @@ export default function UserNav() {
     setIsOpen(false);
     setIsAccountMenuOpen(false);
     window.location.reload();
+  };
+
+  const handleAcceptTerms = async () => {
+    if (!user) {
+      return;
+    }
+
+    setIsAcceptingTerms(true);
+    setTermsError('');
+    const nowIso = new Date().toISOString();
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({
+        terms_accepted_at: nowIso,
+        terms_accepted_version: TERMS_VERSION,
+        updated_at: nowIso,
+      })
+      .eq('id', user.id)
+      .select('*')
+      .single();
+
+    if (error) {
+      setTermsError(error.message || 'Unable to save Terms acceptance right now.');
+      setIsAcceptingTerms(false);
+      return;
+    }
+
+    setProfile(data || null);
+    setIsAcceptingTerms(false);
   };
 
   if (loading) {
@@ -141,6 +180,8 @@ export default function UserNav() {
 
   const avatarUrl = profile?.avatar_url || user.user_metadata?.avatar_url;
   const username = profile?.username || user.user_metadata?.full_name || user.email;
+  const hasAcceptedTerms = Boolean(profile?.terms_accepted_at) && profile?.terms_accepted_version === TERMS_VERSION;
+  const mustAcceptTerms = Boolean(user && profileLoaded && !hasAcceptedTerms);
 
   return (
     <div className="flex items-center space-x-3">
@@ -193,6 +234,76 @@ export default function UserNav() {
           </div>
         ) : null}
       </div>
+      {mustAcceptTerms ? (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/95 p-4 backdrop-blur-sm">
+          <div className="max-h-[90vh] w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 shadow-2xl shadow-black/60">
+            <div className="border-b border-slate-800 px-5 py-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-cyan-400">Terms of Use Agreement</p>
+              <p className="mt-1 text-xs text-slate-400">Last Updated: August 2, 2026</p>
+            </div>
+            <div className="max-h-[62vh] space-y-3 overflow-y-auto px-5 py-4 text-sm text-slate-200">
+              <p>Welcome to <strong>I Saw U</strong> (“Company,” “we,” “us,” or “our”). These Terms of Use (“Terms”) govern your access to and use of our website, mobile application, and related services (collectively, the “Service”).</p>
+              <p>By creating an account, accessing, or using the Service, you agree to be bound by these Terms. If you do not agree, do not use the Service.</p>
+              <p><strong>1. Age Eligibility and Account Registration</strong></p>
+              <ul className="list-disc space-y-1 pl-5 text-slate-300">
+                <li><strong>Strict Age Requirement:</strong> You must be at least <strong>18 years of age</strong> to register for, access, or use the Service. By accessing or using I Saw U, you represent and warrant that you are at least 18 years old.</li>
+                <li><strong>Account Security:</strong> You are responsible for maintaining the confidentiality of your login credentials and for all activities that occur under your account.</li>
+                <li><strong>Accurate Information:</strong> You agree to provide accurate, current, and complete information during registration and to keep your account details updated.</li>
+              </ul>
+              <p><strong>2. Entertainment Purposes Only</strong></p>
+              <ul className="list-disc space-y-1 pl-5 text-slate-300">
+                <li><strong>Entertainment Disclaimer:</strong> <strong>I Saw U is provided solely and exclusively for entertainment purposes.</strong> The Service, including any photo processing, location/EXIF metadata displaying, setlist/event matching, or venue logs, is intended strictly for personal enjoyment.</li>
+                <li><strong>No Reliance:</strong> Information provided through the Service should not be relied upon for legal, navigation, identification, security, or official record-keeping purposes.</li>
+              </ul>
+              <p><strong>3. User Content and Media Permissions</strong></p>
+              <ul className="list-disc space-y-1 pl-5 text-slate-300">
+                <li><strong>Ownership:</strong> You retain full ownership of all photos, media, EXIF metadata, text, and other materials you upload or capture through the Service (“User Content”).</li>
+                <li><strong>License Grant:</strong> By uploading User Content, you grant us a non-exclusive, worldwide, royalty-free license to host, store, display, reformat, and process your content solely for the purpose of operating, improving, and providing the Service to you.</li>
+                <li><strong>Metadata Processing:</strong> You acknowledge and agree that the Service may extract and process EXIF metadata embedded in your media (including timestamps, device specs, and location coordinates) to organize and present content within your account.</li>
+              </ul>
+              <p><strong>4. Acceptable Use Policy</strong> You agree <strong>not</strong> to engage in any of the following prohibited activities:</p>
+              <ul className="list-disc space-y-1 pl-5 text-slate-300">
+                <li><strong>Illegal Content &amp; Harassment:</strong> Uploading or transmitting material that is unlawful, harassing, infringing, libelous, or harmful.</li>
+                <li><strong>Infringement:</strong> Uploading media or content that violates the intellectual property, trademark, or privacy rights of third parties.</li>
+                <li><strong>Service Disruption:</strong> Attempting to reverse engineer, bypass security controls, introduce malware, or overwhelm our infrastructure with unauthorized automated requests.</li>
+                <li><strong>Misuse of Live Capture:</strong> Using offline queuing or automated capture tools to harvest unauthorized visual or location data from public or private venues or individuals without consent.</li>
+              </ul>
+              <p><strong>5. Intellectual Property Rights</strong><br />All software, designs, layout, graphics, code, and trademarks associated with <strong>I Saw U</strong> (excluding your personal User Content) are the exclusive property of the Company and its licensors. You may not copy, modify, or distribute any part of the Service without prior written authorization.</p>
+              <p><strong>6. Account Termination and Suspension</strong><br />We reserve the right to suspend or terminate your access to the Service at our sole discretion, without prior notice, if you violate these Terms, if we suspect you are under 18 years of age, or if necessary to protect the security and integrity of our systems. You may terminate your account at any time within the app settings or by contacting support.</p>
+              <p><strong>7. Disclaimers and Limitation of Liability</strong></p>
+              <ul className="list-disc space-y-1 pl-5 text-slate-300">
+                <li><strong>"As-Is" Service:</strong> The Service is provided on an "AS IS" and "AS AVAILABLE" basis without warranties of any kind, express or implied.</li>
+                <li><strong>Data &amp; Upload Loss:</strong> While we employ offline synchronization and retry queues to manage media uploads, we are not liable for lost photos, failed uploads, missing EXIF data, or server outages. You are encouraged to maintain local backups of your media.</li>
+                <li><strong>Limitation of Liability:</strong> To the maximum extent permitted by law, I Saw U shall not be liable for any indirect, incidental, consequential, or punitive damages arising out of your use of or inability to use the Service.</li>
+              </ul>
+              <p><strong>8. Governing Law and Jurisdiction</strong><br />These Terms shall be governed by and construed in accordance with the laws of the State of <strong>Maryland</strong>, without regard to its conflict of law principles. Any legal action or proceeding arising under these Terms shall be brought exclusively in the state or federal courts located within <strong>Prince George's County, Maryland</strong>.</p>
+              <p><strong>9. Contact Information</strong><br />If you have any questions, concerns, issues, or inquiries regarding these Terms or the Service, please submit an issue or open a discussion directly on our official GitHub repository:</p>
+              <p><a href="https://github.com/DBTO1970/i-saw-u" target="_blank" rel="noreferrer" className="text-cyan-300 underline">https://github.com/DBTO1970/i-saw-u</a></p>
+              {termsError ? (
+                <p className="rounded-lg border border-red-500/40 bg-red-500/10 px-3 py-2 text-xs text-red-300">{termsError}</p>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2 border-t border-slate-800 px-5 py-4">
+              <button
+                type="button"
+                onClick={handleSignOut}
+                disabled={isAcceptingTerms}
+                className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 transition hover:bg-slate-800 disabled:opacity-60"
+              >
+                Sign out
+              </button>
+              <button
+                type="button"
+                onClick={handleAcceptTerms}
+                disabled={isAcceptingTerms}
+                className="rounded-lg bg-cyan-500 px-4 py-2 text-xs font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:opacity-60"
+              >
+                {isAcceptingTerms ? 'Saving...' : 'I Agree'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

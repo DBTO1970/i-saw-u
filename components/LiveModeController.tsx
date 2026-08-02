@@ -662,14 +662,16 @@ export default function LiveModeController({
         >
           {isCapturing ? 'Capturing...' : 'Take Live Photo'}
         </button>
-        <button
-          type="button"
-          disabled={!queueManager || (queueStats.pending === 0 && queueStats.failed === 0) || queueStats.processing > 0}
-          onClick={handleProcessQueueNow}
-          className="rounded-xl border border-cyan-400/50 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-60"
-        >
-          {queueStats.processing > 0 ? 'Processing...' : 'Process Queue Now'}
-        </button>
+        {queueStats.pending > 0 || queueStats.failed > 0 ? (
+          <button
+            type="button"
+            disabled={!queueManager || queueStats.processing > 0}
+            onClick={handleProcessQueueNow}
+            className="rounded-xl border border-cyan-400/50 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+          >
+            {queueStats.processing > 0 ? 'Processing...' : 'Process Queue Now'}
+          </button>
+        ) : null}
         <button
           type="button"
           disabled={!queueManager || queueStats.failed === 0 || queueStats.processing > 0}
