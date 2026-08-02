@@ -90,7 +90,7 @@ export default async function HomePage({ searchParams }) {
         <div className="mb-6 flex flex-wrap items-center justify-between gap-4 border-b border-slate-800/80 pb-4 sm:mb-8 sm:pb-6">
           <div className="flex items-center gap-3 sm:gap-4">
             <Image
-              src="/psychedelic_camera_lens.svg"
+              src="/psychedelic_camera_lens_high_contrast.svg"
               alt="I Saw U logo"
               width={76}
               height={76}
