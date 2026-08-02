@@ -131,7 +131,7 @@ export default async function FavoritesPage() {
                       {/* Creator */}
                       <div className="flex items-center justify-between gap-3">
                         <p className="truncate text-xs text-slate-400">
-                          by <span className="text-slate-300">{creatorName}</span>
+                          
                         </p>
                         <PhotoLikeButton
                           photoId={photo.id}
