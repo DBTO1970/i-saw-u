@@ -1,3 +1,5 @@
+import TermsBackButton from './TermsBackButton';
+
 export const metadata = {
   title: 'Terms of Use | i-saw-u',
 };
@@ -6,6 +8,7 @@ export default function TermsPage() {
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.16),_transparent_60%)] px-3 py-4 sm:px-4 sm:py-8">
       <div className="mx-auto w-full max-w-4xl rounded-2xl border border-slate-800 bg-slate-900/70 p-4 shadow-2xl shadow-slate-950/40 backdrop-blur sm:rounded-3xl sm:p-6 md:p-10">
+        <TermsBackButton />
         <h1 className="text-2xl font-bold text-white">TERMS OF USE AGREEMENT</h1>
         <p className="mt-2 text-sm text-slate-300"><strong>Last Updated:</strong> August 2, 2026</p>
 
