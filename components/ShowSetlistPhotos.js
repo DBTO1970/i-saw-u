@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import PhotoLikeButton from './PhotoLikeButton';
+import { deriveCurrentSongLabelFromShowMetadata } from '../lib/photo-show-context';
 
 function normalizeSongLabel(value) {
   return String(value || '')
@@ -33,17 +34,9 @@ function getRawExif(photo) {
 function getPhotoSongTitle(photo) {
   const rawExif = getRawExif(photo);
   const showMetadata = rawExif?.showMetadata && typeof rawExif.showMetadata === 'object' ? rawExif.showMetadata : {};
+  const resolvedFromMetadata = deriveCurrentSongLabelFromShowMetadata(showMetadata, rawExif);
   const candidates = [
-    showMetadata.currentSong,
-    showMetadata.songTitle,
-    showMetadata.song_title,
-    showMetadata.calibrationMatchedSong,
-    showMetadata?.timingCalibration?.matchedSongLabel,
-    rawExif.currentSong,
-    rawExif.songTitle,
-    rawExif.song_title,
-    rawExif.calibrationMatchedSong,
-    rawExif?.timingCalibration?.matchedSongLabel,
+    resolvedFromMetadata,
     rawExif.song,
     photo?.currentSong,
     photo?.songTitle,
