@@ -1,32 +1,37 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import Link from 'next/link';
 import LibraryPhotoDeleteButton from './LibraryPhotoDeleteButton';
 import PhotoVisibilityToggle from './PhotoVisibilityToggle';
-import SortDropdown from './SortDropdown';
 import { groupPhotosByYearAndShow } from '../lib/photo-grouping';
-import { sortPhotos } from '../lib/sort-photos';
+import { useSortedList } from '../lib/useSortedList';
 
-type SortBy = 'showDate' | 'dateSaved';
+type SavedPhoto = Record<string, unknown>;
+type MappedPhoto = SavedPhoto & { exifShowDate: string | null; dateSaved: string | null };
 
 type SavedPhotosPanelProps = {
-  photos: Record<string, unknown>[];
+  photos: SavedPhoto[];
   photosError?: string | null;
 };
 
 export default function SavedPhotosPanel({ photos, photosError }: SavedPhotosPanelProps) {
-  const [sortBy, setSortBy] = useState<SortBy>('showDate');
+  const mappedPhotos = useMemo(
+    (): MappedPhoto[] =>
+      photos.map((photo) => ({
+        ...photo,
+        exifShowDate: (photo.matched_show_date as string | null) ?? null,
+        dateSaved: (photo.created_at as string | null) ?? null,
+      })),
+    [photos],
+  );
 
-  const groupedSavedPhotos = useMemo(() => {
-    const mapped = photos.map((photo) => ({
-      ...photo,
-      exifShowDate: (photo.matched_show_date as string | null) ?? null,
-      dateSaved: (photo.created_at as string | null) ?? null,
-    }));
-    const sorted = sortPhotos(mapped, sortBy, 'desc');
-    return groupPhotosByYearAndShow(sorted);
-  }, [photos, sortBy]);
+  const { sortedData, SortControlComponent } = useSortedList(mappedPhotos, 'showDate');
+
+  const groupedSavedPhotos = useMemo(
+    () => groupPhotosByYearAndShow(sortedData),
+    [sortedData],
+  );
 
   const defaultSavedPhotosYear = groupedSavedPhotos[0]?.year || null;
 
@@ -49,7 +54,7 @@ export default function SavedPhotosPanel({ photos, photosError }: SavedPhotosPan
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-end">
-        <SortDropdown currentSort={sortBy} onSortChange={setSortBy} />
+        {SortControlComponent}
       </div>
 
       {groupedSavedPhotos.map((yearGroup: { year: string; groups: { key: string; showDate: string | null; label: string; venueName: string | null; location: string | null; photos: Record<string, unknown>[] }[] }) => (
