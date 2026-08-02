@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ExifReader from 'exifreader';
 import { convertToWebP } from '../lib/image-optimizer';
 import { capturePhotoWithNativeCamera } from '../lib/native-camera-photo';
+import { sendClientDiagnostic, withClientDiagnosticError } from '../lib/client-diagnostics';
 
 const emptyMetadata = {
   dateTimeOriginal: 'Not available',
@@ -83,10 +84,23 @@ function logExifDiagnostic(stage, file, details = {}, error = null) {
 
   if (error) {
     console.error('[EXIF_DIAGNOSTIC]', payload, error);
+    void sendClientDiagnostic({
+      event: `exif-${stage}`,
+      severity: 'error',
+      source: 'image-exif-uploader',
+      details: payload,
+      error: withClientDiagnosticError(error),
+    });
     return;
   }
 
   console.warn('[EXIF_DIAGNOSTIC]', payload);
+  void sendClientDiagnostic({
+    event: `exif-${stage}`,
+    severity: 'warn',
+    source: 'image-exif-uploader',
+    details: payload,
+  });
 }
 
 function pad2(value) {

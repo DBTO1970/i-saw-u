@@ -1,4 +1,5 @@
 import ExifReader from 'exifreader';
+import { sendClientDiagnostic, withClientDiagnosticError } from './client-diagnostics';
 
 type ExifTagValue = {
   value?: unknown;
@@ -147,10 +148,17 @@ export async function extractExifFromLocalImageUri(localImageUri: string): Promi
   try {
     const response = await fetch(localImageUri);
     if (!response.ok) {
-      console.error('[EXIF_DIAGNOSTIC]', buildExifDiagnosticContext(localImageUri, {
+      const details = buildExifDiagnosticContext(localImageUri, {
         stage: 'fetch-local-uri-failed',
         status: response.status,
-      }));
+      });
+      console.error('[EXIF_DIAGNOSTIC]', details);
+      void sendClientDiagnostic({
+        event: 'exif-fetch-local-uri-failed',
+        severity: 'error',
+        source: 'local-image-exif',
+        details,
+      });
       return { ...EMPTY_CLEAN_PHOTO_EXIF };
     }
 
@@ -163,17 +171,33 @@ export async function extractExifFromLocalImageUri(localImageUri: string): Promi
       const tags = (await ExifReader.load(imageFile, { expanded: true })) as Record<string, ExifTagValue>;
       return extractCleanPhotoExifFromTags(tags);
     } catch (parseError) {
-      console.error('[EXIF_DIAGNOSTIC]', buildExifDiagnosticContext(localImageUri, {
+      const details = buildExifDiagnosticContext(localImageUri, {
         stage: 'exifreader-load-failed',
         mimeType: imageFile.type || null,
         fileSize: imageFile.size,
-      }), parseError);
+      });
+      console.error('[EXIF_DIAGNOSTIC]', details, parseError);
+      void sendClientDiagnostic({
+        event: 'exif-exifreader-load-failed',
+        severity: 'error',
+        source: 'local-image-exif',
+        details,
+        error: withClientDiagnosticError(parseError),
+      });
       return { ...EMPTY_CLEAN_PHOTO_EXIF };
     }
   } catch (error) {
-    console.error('[EXIF_DIAGNOSTIC]', buildExifDiagnosticContext(localImageUri, {
+    const details = buildExifDiagnosticContext(localImageUri, {
       stage: 'unexpected-local-uri-exif-failure',
-    }), error);
+    });
+    console.error('[EXIF_DIAGNOSTIC]', details, error);
+    void sendClientDiagnostic({
+      event: 'exif-unexpected-local-uri-exif-failure',
+      severity: 'error',
+      source: 'local-image-exif',
+      details,
+      error: withClientDiagnosticError(error),
+    });
     return { ...EMPTY_CLEAN_PHOTO_EXIF };
   }
 }
