@@ -3,7 +3,12 @@ import './globals.css';
 export const metadata = {
   title: 'I Saw U',
   description: 'Upload an image and inspect its EXIF metadata to compare it to the phish.net api.',
-  manifest: '/manifest.json',
+  manifest: '/manifest.webmanifest',
+  icons: {
+    icon: [{ url: '/icon.png', type: 'image/png' }],
+    shortcut: [{ url: '/icon.png', type: 'image/png' }],
+    apple: [{ url: '/apple-icon.png', type: 'image/png' }],
+  },
 };
 
 export default function RootLayout({ children }) {
