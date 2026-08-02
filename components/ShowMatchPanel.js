@@ -6,6 +6,7 @@ import ImageExifUploader from './ImageExifUploader';
 import ShowMatchCard from './ShowMatchCard';
 import LiveModeController from './LiveModeController';
 import { installGlobalClientDiagnostics } from '../lib/client-diagnostics';
+import { deriveCurrentSongLabelFromContext } from '../lib/photo-show-context';
 
 function extractDateFromMetadata(metadata) {
   if (!metadata || typeof metadata !== 'object') {
@@ -832,7 +833,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
               setShowStartTime(nextTime);
             }}
             onTimeContextChange={(context) => {
-              setCurrentSongLabel(context?.songLabel || (context?.label === 'Set Break' ? 'Set Break' : ''));
+              setCurrentSongLabel(deriveCurrentSongLabelFromContext(context));
               setTimeContextLabel(context?.label || '');
             }}
             onCalibrationChange={(nextCalibrationMetadata) => {

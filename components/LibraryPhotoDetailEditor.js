@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { deletePhotoFromLibrary, updateUserLibraryPhotoMetadata } from '../app/actions/user-library';
 import PhotoVisibilityToggle from './PhotoVisibilityToggle';
 import ShowMatchCard from './ShowMatchCard';
+import { deriveCurrentSongLabelFromShowMetadata } from '../lib/photo-show-context';
 
 function safeJsonStringify(value) {
   try {
@@ -67,6 +68,8 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
   const savedShowData = savedShowMetadata?.showData && typeof savedShowMetadata.showData === 'object'
     ? savedShowMetadata.showData
     : null;
+  const initialTimeContextLabel = savedShowMetadata?.timeContextLabel || '';
+  const initialCurrentSongLabel = deriveCurrentSongLabelFromShowMetadata(savedShowMetadata, parsedRawExif || {});
   const showForCard = savedShowData || (
     savedShowMetadata?.matchedShowDate || initialPhoto.matched_show_date
       ? {
@@ -253,6 +256,8 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
           showStartTime={form.showStartTime || '19:30'}
           onShowStartTimeChange={handleShowStartTimeChange}
           initialIsBookmarked={!!savedShowMetadata}
+          initialTimeContextLabel={initialTimeContextLabel}
+          initialCurrentSongLabel={initialCurrentSongLabel}
         />
       ) : (
         <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-300">

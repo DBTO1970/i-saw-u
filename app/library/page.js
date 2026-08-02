@@ -6,6 +6,7 @@ import UserNav from '../../components/UserNav';
 import LibraryPhotoDeleteButton from '../../components/LibraryPhotoDeleteButton';
 import PhotoVisibilityToggle from '../../components/PhotoVisibilityToggle';
 import RecentFanPhotosFeed from '../../components/RecentFanPhotosFeed';
+import { deriveCurrentSongLabelFromShowMetadata } from '../../lib/photo-show-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -105,7 +106,7 @@ export default async function LibraryPage() {
                 const savedShowMetadata = getSavedShowMetadata(photo);
                 const showDate = savedShowMetadata?.matchedShowDate || photo.matched_show_date || null;
                 const venueName = savedShowMetadata?.venueName || savedShowMetadata?.showData?.venueName || 'Unknown venue';
-                const currentSong = savedShowMetadata?.currentSong || null;
+                const currentSong = deriveCurrentSongLabelFromShowMetadata(savedShowMetadata, photo?.raw_exif || null) || null;
                 const calibrationSource = savedShowMetadata?.timingCalibration?.source || savedShowMetadata?.calibrationSource || null;
                 const calibrationConfidence = savedShowMetadata?.timingCalibration?.confidence || savedShowMetadata?.calibrationConfidence || null;
 

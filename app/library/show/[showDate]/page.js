@@ -11,6 +11,7 @@ import {
 import FanGalleryGrid from '../../../../components/FanGalleryGrid';
 import ShowSetlistPhotos from '../../../../components/ShowSetlistPhotos';
 import ShowBookmarkButton from '../../../../components/ShowBookmarkButton';
+import { deriveCurrentSongLabelFromShowMetadata } from '../../../../lib/photo-show-context';
 
 function isValidDate(d) {
   return /^\d{4}-\d{2}-\d{2}$/.test(d);
@@ -210,12 +211,10 @@ export default async function ShowDetailPage({ params }) {
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
               {photos.map((photo) => {
                 const exif = getRawExif(photo);
+                const showMetadata = exif?.showMetadata && typeof exif.showMetadata === 'object' ? exif.showMetadata : {};
                 const currentSong =
-                  exif.showMetadata?.currentSong
-                  || exif.showMetadata?.calibrationMatchedSong
-                  || exif.showMetadata?.timingCalibration?.matchedSongLabel
-                  || '';
-                const timeLabel = exif.showMetadata?.timeContextLabel || '';
+                  deriveCurrentSongLabelFromShowMetadata(showMetadata, exif) || '';
+                const timeLabel = showMetadata?.timeContextLabel || '';
 
                 return (
                   <Link

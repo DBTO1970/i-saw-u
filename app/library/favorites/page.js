@@ -4,6 +4,7 @@ import { createClient } from '../../../lib/supabase/server';
 import { getUserLikedPhotos } from '../../actions/user-library';
 import UserNav from '../../../components/UserNav';
 import PhotoLikeButton from '../../../components/PhotoLikeButton';
+import { deriveCurrentSongLabelFromShowMetadata } from '../../../lib/photo-show-context';
 
 export const dynamic = 'force-dynamic';
 
@@ -25,6 +26,28 @@ function getRawExifField(photo, field) {
   const raw = photo?.raw_exif;
   if (!raw || typeof raw !== 'object') return null;
   return raw?.showMetadata?.[field] || raw?.[field] || null;
+}
+
+function getRawExifObject(photo) {
+  const raw = photo?.raw_exif;
+  if (!raw) {
+    return {};
+  }
+
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  if (typeof raw === 'object' && !Array.isArray(raw)) {
+    return raw;
+  }
+
+  return {};
 }
 
 export default async function FavoritesPage() {
@@ -86,7 +109,9 @@ export default async function FavoritesPage() {
                 const city = getRawExifField(photo, 'city') || null;
                 const state = getRawExifField(photo, 'state') || null;
                 const location = [city, state].filter(Boolean).join(', ') || null;
-                const currentSong = getRawExifField(photo, 'currentSong') || null;
+                const rawExif = getRawExifObject(photo);
+                const showMetadata = rawExif?.showMetadata && typeof rawExif.showMetadata === 'object' ? rawExif.showMetadata : {};
+                const currentSong = deriveCurrentSongLabelFromShowMetadata(showMetadata, rawExif) || null;
                 const creatorName = photo.creator?.display_name || photo.creator?.username || 'Anonymous';
 
                 return (

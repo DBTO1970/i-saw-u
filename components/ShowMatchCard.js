@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { getPhishInShowLinks } from '../app/actions/shows';
 import { saveShowToLibrary, removeShowFromLibraryByDate } from '../app/actions/user-library';
 import { buildSetlistSongTimeline, calibrateShowStartTime } from '../lib/show-start-time-calibration';
+import { normalizeTimeContextLabel } from '../lib/photo-show-context';
 
 function toRadians(value) {
   return (value * Math.PI) / 180;
@@ -270,6 +271,73 @@ function buildSetBreakWindow(showDate, startTimeString, setlistEntries) {
   };
 }
 
+function buildManualTimeContextOverride(contextLabel, showDate, startTimeString, setlistEntries) {
+  const normalizedContext = normalizeTimeContextLabel(contextLabel);
+  if (!normalizedContext) {
+    return null;
+  }
+
+  if (normalizedContext === 'Pre Show') {
+    return {
+      phase: 'pre',
+      label: 'Pre Show',
+      confidence: 'manual',
+      color: 'yellow',
+      songContext: null,
+    };
+  }
+
+  if (normalizedContext === 'Post Show') {
+    return {
+      phase: 'post',
+      label: 'Post Show',
+      confidence: 'manual',
+      color: 'yellow',
+      songContext: null,
+    };
+  }
+
+  if (normalizedContext === 'Set Break') {
+    return {
+      phase: 'during',
+      label: 'Set Break',
+      confidence: 'manual',
+      color: 'yellow',
+      songContext: null,
+      setBreakWindow: buildSetBreakWindow(showDate, startTimeString, setlistEntries),
+    };
+  }
+
+  if (normalizedContext === 'Between Shows') {
+    return {
+      phase: 'outside',
+      label: 'Between Shows',
+      confidence: 'manual',
+      color: 'yellow',
+      songContext: null,
+    };
+  }
+
+  return null;
+}
+
+function contextLabelToSnapValue(contextLabel) {
+  const normalizedContext = normalizeTimeContextLabel(contextLabel);
+  if (normalizedContext === 'Pre Show') {
+    return 'context:pre-show';
+  }
+  if (normalizedContext === 'Post Show') {
+    return 'context:post-show';
+  }
+  if (normalizedContext === 'Set Break') {
+    return 'context:set-break';
+  }
+  if (normalizedContext === 'Between Shows') {
+    return 'context:between-shows';
+  }
+  return '';
+}
+
 function inferTimeContext(photoMetadata, show, setlistEntries, startTimeString = '19:30') {
   const photoDateTime = parsePhotoDateTime(photoMetadata);
   const showDate = parseShowDate(show);
@@ -534,7 +602,17 @@ function parseTimeStringToMinutes(value) {
   return hours * 60 + minutes;
 }
 
-export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19:30', onShowStartTimeChange, onTimeContextChange, onCalibrationChange, initialIsBookmarked = false }) {
+export default function ShowMatchCard({
+  photoMetadata,
+  show,
+  showStartTime = '19:30',
+  onShowStartTimeChange,
+  onTimeContextChange,
+  onCalibrationChange,
+  initialIsBookmarked = false,
+  initialTimeContextLabel = '',
+  initialCurrentSongLabel = '',
+}) {
   const [startMinutes, setStartMinutes] = useState(() => parseTimeStringToMinutes(showStartTime));
   const [snapSongIndex, setSnapSongIndex] = useState('');
   const [snapMessage, setSnapMessage] = useState('');
@@ -588,7 +666,28 @@ export default function ShowMatchCard({ photoMetadata, show, showStartTime = '19
     () => inferTimeContext(photoMetadata, show, setlistEntries, startTime24h),
     [photoMetadata, show, setlistEntries, startTime24h]
   );
+  const initialContextOverride = useMemo(
+    () => buildManualTimeContextOverride(
+      initialTimeContextLabel || initialCurrentSongLabel,
+      show?.date,
+      startTime24h,
+      setlistEntries
+    ),
+    [initialTimeContextLabel, initialCurrentSongLabel, show?.date, startTime24h, setlistEntries]
+  );
   const effectiveTimeContext = manualTimeContextOverride || timeContext;
+
+  useEffect(() => {
+    if (!initialContextOverride) {
+      return;
+    }
+
+    setManualTimeContextOverride(initialContextOverride);
+    const initialSnapValue = contextLabelToSnapValue(initialContextOverride.label);
+    if (initialSnapValue) {
+      setSnapSongIndex(initialSnapValue);
+    }
+  }, [initialContextOverride]);
 
   useEffect(() => {
     if (!defaultCalibration || showStartTime !== '19:30') {
