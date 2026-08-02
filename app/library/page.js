@@ -1,51 +1,156 @@
-import { getRecentFanPhotoShows, getUserLibraryPhotos, getUserSavedShows } from '../actions/user-library';
+import { getRecentFanPhotoShows, getUserLibraryPhotos, getUserLikedPhotos, getUserSavedShows } from '../actions/user-library';
 import { createClient } from '../../lib/supabase/server';
 import { redirect } from 'next/navigation';
 import Link from 'next/link';
 import UserNav from '../../components/UserNav';
 import LibraryPhotoDeleteButton from '../../components/LibraryPhotoDeleteButton';
 import PhotoVisibilityToggle from '../../components/PhotoVisibilityToggle';
-import RecentFanPhotosFeed from '../../components/RecentFanPhotosFeed';
-import { deriveCurrentSongLabelFromShowMetadata } from '../../lib/photo-show-context';
+import PhotoLikeButton from '../../components/PhotoLikeButton';
+import { deriveCurrentSongLabelFromShowMetadata, normalizeTimeContextLabel } from '../../lib/photo-show-context';
 
 export const dynamic = 'force-dynamic';
 
-function getSavedShowMetadata(photo) {
-  const rawExif = photo?.raw_exif;
-  if (!rawExif || typeof rawExif !== 'object' || Array.isArray(rawExif)) {
-    return null;
-  }
+const TAB_KEYS = ['saved-photos', 'recent-fan-photos', 'bookmarked-shows', 'favorites'];
 
-  const showMetadata = rawExif.showMetadata;
+function formatDate(value) {
+  if (!value) return '';
+  const [y, m, day] = String(value).split('-');
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  if (!y || !m || !day) return String(value);
+  return `${months[parseInt(m, 10) - 1]} ${parseInt(day, 10)}, ${y}`;
+}
+
+function formatRecentFanPhotoTimestamp(timestamp) {
+  if (!timestamp) return 'recently';
+  const parsed = new Date(timestamp);
+  if (Number.isNaN(parsed.getTime())) return 'recently';
+  return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function parseRawExif(rawExif) {
+  if (!rawExif) return {};
+  if (typeof rawExif === 'string') {
+    try {
+      const parsed = JSON.parse(rawExif);
+      return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  if (typeof rawExif === 'object' && !Array.isArray(rawExif)) {
+    return rawExif;
+  }
+  return {};
+}
+
+function getSavedShowMetadata(photo) {
+  const rawExif = parseRawExif(photo?.raw_exif);
+  const showMetadata = rawExif?.showMetadata;
   if (!showMetadata || typeof showMetadata !== 'object' || Array.isArray(showMetadata)) {
     return null;
   }
-
   return showMetadata;
+}
+
+function deriveYearFromPhoto(photo, showDate) {
+  const showYear = typeof showDate === 'string' ? showDate.slice(0, 4) : '';
+  if (/^\d{4}$/.test(showYear)) return showYear;
+
+  const candidates = [photo?.date_taken, photo?.liked_at, photo?.created_at];
+  for (const value of candidates) {
+    if (typeof value !== 'string') continue;
+    const match = value.match(/^(\d{4})[-/]/);
+    if (match) return match[1];
+    const parsed = new Date(value);
+    if (!Number.isNaN(parsed.getTime())) return String(parsed.getFullYear());
+  }
+
+  return 'Unknown Year';
 }
 
 function groupShowsByYear(shows) {
   const grouped = new Map();
-
   (shows || []).forEach((show) => {
-    const year = String(show?.show_date || '').slice(0, 4);
-    if (!year) {
-      return;
-    }
-
-    if (!grouped.has(year)) {
-      grouped.set(year, []);
-    }
-
+    const year = String(show?.show_date || '').slice(0, 4) || 'Unknown Year';
+    if (!grouped.has(year)) grouped.set(year, []);
     grouped.get(year).push(show);
   });
 
   return Array.from(grouped.entries())
-    .map(([year, yearShows]) => [year, yearShows.sort((left, right) => String(right.show_date).localeCompare(String(left.show_date)))])
-    .sort(([leftYear], [rightYear]) => Number(rightYear) - Number(leftYear));
+    .map(([year, yearShows]) => [
+      year,
+      yearShows.sort((left, right) => String(right.show_date || '').localeCompare(String(left.show_date || ''))),
+    ])
+    .sort(([leftYear], [rightYear]) => {
+      if (leftYear === 'Unknown Year') return 1;
+      if (rightYear === 'Unknown Year') return -1;
+      return Number(rightYear) - Number(leftYear);
+    });
 }
 
-export default async function LibraryPage() {
+function groupPhotosByYearAndShow(photos) {
+  const years = new Map();
+
+  (photos || []).forEach((photo) => {
+    const rawExif = parseRawExif(photo?.raw_exif);
+    const showMetadata = getSavedShowMetadata(photo);
+    const showDate = showMetadata?.matchedShowDate || photo?.matched_show_date || null;
+    const year = deriveYearFromPhoto(photo, showDate);
+
+    if (!years.has(year)) {
+      years.set(year, new Map());
+    }
+
+    const yearGroups = years.get(year);
+    const groupKey = showDate ? `show:${showDate}` : 'between-shows';
+    if (!yearGroups.has(groupKey)) {
+      const venueName = showMetadata?.venueName || showMetadata?.showData?.venueName || null;
+      const city = showMetadata?.city || showMetadata?.showData?.city || null;
+      const state = showMetadata?.state || showMetadata?.showData?.state || null;
+      yearGroups.set(groupKey, {
+        key: groupKey,
+        showDate,
+        label: showDate ? formatDate(showDate) : 'In Between Shows',
+        venueName,
+        location: [city, state].filter(Boolean).join(', ') || null,
+        photos: [],
+      });
+    }
+
+    const group = yearGroups.get(groupKey);
+    const currentSong = deriveCurrentSongLabelFromShowMetadata(showMetadata, rawExif) || null;
+    const timeContextLabel = normalizeTimeContextLabel(showMetadata?.timeContextLabel || rawExif?.timeContextLabel || '');
+    group.photos.push({
+      ...photo,
+      rawExif,
+      showMetadata,
+      currentSong,
+      timeContextLabel,
+    });
+  });
+
+  return Array.from(years.entries())
+    .map(([year, groupMap]) => {
+      const groups = Array.from(groupMap.values())
+        .sort((left, right) => {
+          if (!left.showDate && right.showDate) return 1;
+          if (left.showDate && !right.showDate) return -1;
+          return String(right.showDate || '').localeCompare(String(left.showDate || ''));
+        })
+        .map((group) => ({
+          ...group,
+          photos: group.photos.sort((left, right) => String(right.created_at || right.liked_at || '').localeCompare(String(left.created_at || left.liked_at || ''))),
+        }));
+      return { year, groups };
+    })
+    .sort((left, right) => {
+      if (left.year === 'Unknown Year') return 1;
+      if (right.year === 'Unknown Year') return -1;
+      return Number(right.year) - Number(left.year);
+    });
+}
+
+export default async function LibraryPage({ searchParams }) {
   const supabase = createClient();
   const { data: { user } } = await supabase.auth.getUser();
 
@@ -53,17 +158,40 @@ export default async function LibraryPage() {
     redirect('/');
   }
 
-  const { photos, error: photosError } = await getUserLibraryPhotos();
-  const { shows, error: showsError } = await getUserSavedShows();
-  const { shows: recentFanPhotoShows, error: recentFanPhotoShowsError } = await getRecentFanPhotoShows(12);
-  const groupedShows = groupShowsByYear(shows);
-  const defaultOpenYear = groupedShows[0]?.[0] || null;
+  const [
+    { photos, error: photosError },
+    { shows: savedShows, error: showsError },
+    { shows: recentFanPhotoShows, error: recentFanPhotoShowsError },
+    { photos: favoritePhotos, error: favoritePhotosError },
+  ] = await Promise.all([
+    getUserLibraryPhotos(),
+    getUserSavedShows(),
+    getRecentFanPhotoShows(24),
+    getUserLikedPhotos(),
+  ]);
+
+  const activeTab = TAB_KEYS.includes(searchParams?.tab) ? searchParams.tab : 'saved-photos';
+  const groupedSavedShows = groupShowsByYear(savedShows);
+  const groupedSavedPhotos = groupPhotosByYearAndShow(photos);
+  const groupedFavoritePhotos = groupPhotosByYearAndShow(favoritePhotos);
+  const groupedRecentFanShows = groupShowsByYear(recentFanPhotoShows);
+  const bookmarkedShowDates = new Set((savedShows || []).map((show) => show.show_date).filter(Boolean));
+
+  const defaultSavedPhotosYear = groupedSavedPhotos[0]?.year || null;
+  const defaultRecentFanYear = groupedRecentFanShows[0]?.[0] || null;
+  const defaultBookmarkedYear = groupedSavedShows[0]?.[0] || null;
+  const defaultFavoritesYear = groupedFavoritePhotos[0]?.year || null;
+
+  const tabs = [
+    { key: 'saved-photos', label: `Saved Photos (${photos.length})` },
+    { key: 'recent-fan-photos', label: `Recent Fan Photos (${recentFanPhotoShows.length})` },
+    { key: 'bookmarked-shows', label: `Bookmarked Shows (${savedShows.length})` },
+    { key: 'favorites', label: `Favorites (${favoritePhotos.length})` },
+  ];
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.16),_transparent_60%)] px-3 py-4 sm:px-4 sm:py-8">
-      <div className="mx-auto w-full max-w-6xl space-y-8 rounded-2xl border border-slate-800 bg-slate-900/70 p-4 shadow-2xl shadow-slate-950/40 backdrop-blur sm:rounded-3xl sm:p-6 md:p-10">
-        
-        {/* Navigation Header */}
+      <div className="mx-auto w-full max-w-6xl space-y-6 rounded-2xl border border-slate-800 bg-slate-900/70 p-4 shadow-2xl shadow-slate-950/40 backdrop-blur sm:rounded-3xl sm:p-6 md:p-10">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-6">
           <div className="space-y-1">
             <Link href="/" className="inline-flex items-center text-xs font-semibold uppercase tracking-widest text-cyan-400 hover:underline">
@@ -71,212 +199,304 @@ export default async function LibraryPage() {
             </Link>
             <h1 className="text-2xl font-bold text-white sm:text-3xl">My Personal Library</h1>
           </div>
-          <div className="flex items-center gap-3">
-            <Link
-              href="/library/favorites"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/40 bg-rose-500/10 px-3 py-2 text-xs font-semibold text-rose-300 transition hover:bg-rose-500/20"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="h-3.5 w-3.5">
-                <path d="M11.645 20.91l-.007-.003-.022-.012a15.247 15.247 0 01-.383-.218 25.18 25.18 0 01-4.244-3.17C4.688 15.36 2.25 12.174 2.25 8.25 2.25 5.322 4.714 3 7.688 3A5.5 5.5 0 0112 5.052 5.5 5.5 0 0116.313 3c2.973 0 5.437 2.322 5.437 5.25 0 3.925-2.438 7.111-4.739 9.256a25.175 25.175 0 01-4.244 3.17 15.247 15.247 0 01-.383.219l-.022.012-.007.004-.003.001a.752.752 0 01-.704 0l-.003-.001z" />
-              </svg>
-              Favorites
-            </Link>
-            <UserNav />
+          <UserNav />
+        </div>
+
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/60 p-2">
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {tabs.map((tab) => (
+              <Link
+                key={tab.key}
+                href={`/library?tab=${tab.key}`}
+                className={`rounded-xl px-3 py-2 text-center text-xs font-semibold transition ${
+                  activeTab === tab.key
+                    ? 'border border-cyan-500/40 bg-cyan-500/20 text-cyan-200'
+                    : 'border border-slate-800 bg-slate-900/70 text-slate-300 hover:border-cyan-500/30 hover:text-cyan-200'
+                }`}
+              >
+                {tab.label}
+              </Link>
+            ))}
           </div>
         </div>
 
-        {/* Section 1: Saved Photos */}
-        <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xl font-semibold text-white">Saved Photos ({photos.length})</h2>
-            <span className="text-xs text-cyan-400 font-medium">Optimized WebP Format</span>
-          </div>
-
-          {photosError ? (
-            <div className="rounded-2xl border border-dashed border-slate-800 p-8 text-center text-slate-400">
-              {photosError}
-            </div>
-          ) : photos.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-800 p-8 text-center text-slate-400">
-              No saved photos yet. Upload a photo on the home page and click "Save to Library".
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              {photos.map((photo) => {
-                const savedShowMetadata = getSavedShowMetadata(photo);
-                const showDate = savedShowMetadata?.matchedShowDate || photo.matched_show_date || null;
-                const venueName = savedShowMetadata?.venueName || savedShowMetadata?.showData?.venueName || 'Unknown venue';
-                const currentSong = deriveCurrentSongLabelFromShowMetadata(savedShowMetadata, photo?.raw_exif || null) || null;
-                const calibrationSource = savedShowMetadata?.timingCalibration?.source || savedShowMetadata?.calibrationSource || null;
-                const calibrationConfidence = savedShowMetadata?.timingCalibration?.confidence || savedShowMetadata?.calibrationConfidence || null;
-
-                return (
-                  <div
-                    key={photo.id}
-                    className="group relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60 p-4 transition-all hover:border-cyan-500/40"
-                  >
-                    <Link href={`/library/photo/${photo.id}`} className="block">
-                    {photo.url ? (
-                      <div className="relative mb-3 aspect-video w-full overflow-hidden rounded-xl bg-slate-900">
-                        <img
-                          src={photo.url}
-                          alt={photo.file_name}
-                          className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
-                        />
+        {activeTab === 'saved-photos' ? (
+          <section className="space-y-4">
+            {photosError ? (
+              <div className="rounded-2xl border border-dashed border-slate-800 p-8 text-center text-slate-400">{photosError}</div>
+            ) : groupedSavedPhotos.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-800 p-8 text-center text-slate-400">
+                No saved photos yet. Upload a photo on the home page and click "Save to Library".
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {groupedSavedPhotos.map((yearGroup) => (
+                  <details key={yearGroup.year} open={yearGroup.year === defaultSavedPhotosYear} className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-left">
+                      <div>
+                        <p className="text-sm font-semibold text-white">{yearGroup.year}</p>
+                        <p className="text-xs text-slate-400">{yearGroup.groups.length} grouping{yearGroup.groups.length === 1 ? '' : 's'}</p>
                       </div>
-                    ) : (
-                      <div className="mb-3 flex aspect-video w-full items-center justify-center rounded-xl bg-slate-900 text-xs text-slate-500">
-                        Photo Unavailable
-                      </div>
-                    )}
-
-                    <div className="space-y-1 text-xs text-slate-300">
-                      <p className="font-semibold text-white truncate">{photo.file_name}</p>
-                      <p className="text-cyan-300">
-                        Show: {showDate || 'Unknown date'}
-                      </p>
-                      <p className="text-slate-400 truncate">Venue: {venueName}</p>
-                      <p className="text-slate-400 truncate">Current song: {currentSong || 'Unknown'}</p>
-                      {(calibrationSource || calibrationConfidence) ? (
-                        <p className="text-[11px] text-amber-300 truncate">
-                          Timing calibration: {calibrationSource || 'unknown source'}{calibrationConfidence ? ` (${calibrationConfidence} confidence)` : ''}
-                        </p>
-                      ) : null}
-                      <div className="flex items-center space-x-2 text-slate-400">
-                        <span>Date Taken: {photo.date_taken || 'Unknown'}</span>
-                        {photo.time_taken && <span>• {photo.time_taken}</span>}
-                        {photo.show_start_time && <span>• Show start: {photo.show_start_time}</span>}
-                      </div>
-                      {photo.matched_show_date && (
-                        <p className="text-cyan-400">Matched Show: {photo.matched_show_date}</p>
-                      )}
-                      {photo.gps_latitude && photo.gps_longitude && (
-                        <p className="text-[11px] text-slate-500">
-                          GPS: {photo.gps_latitude.toFixed(4)}, {photo.gps_longitude.toFixed(4)}
-                        </p>
-                      )}
-                      <div className="flex items-center gap-2 pt-1">
-                        <span className={`inline-flex rounded-full border px-2 py-1 text-[10px] font-semibold uppercase tracking-wider ${
-                          photo.is_public
-                            ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-                            : 'border-slate-700 bg-slate-900 text-slate-400'
-                        }`}>
-                          {photo.is_public ? 'Public' : 'Private'}
-                        </span>
-                        <span className="inline-flex items-center gap-1 rounded-full border border-rose-500/30 bg-rose-500/10 px-2 py-1 text-[10px] font-semibold text-rose-300">
-                          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor" fill="currentColor" className="h-3 w-3">
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M21 8.25c0-2.485-2.099-4.5-4.688-4.5-1.935 0-3.597 1.126-4.312 2.733-.715-1.607-2.377-2.733-4.313-2.733C5.1 3.75 3 5.765 3 8.25c0 7.22 9 12 9 12s9-4.78 9-12z" />
-                          </svg>
-                          {photo.like_count || 0}
-                        </span>
-                      </div>
-                      <p className="pt-1 text-[11px] font-semibold text-cyan-300">Tap to open details & edit metadata →</p>
-                    </div>
-                    </Link>
-                    <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-3">
-                      <PhotoVisibilityToggle photoId={photo.id} initialIsPublic={!!photo.is_public} />
-                      <LibraryPhotoDeleteButton
-                        photoId={photo.id}
-                        storagePath={photo.storage_path}
-                        label="Delete photo"
-                        className="rounded-lg border border-red-500/50 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-200 transition hover:bg-red-500/20 disabled:opacity-60"
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
-
-        {/* Section 2: Recent Fan Photos */}
-        <section className="space-y-4 pt-4 border-t border-slate-800">
-          <RecentFanPhotosFeed
-            shows={recentFanPhotoShows}
-            bookmarkedShowDates={(shows || []).map((s) => s.show_date).filter(Boolean)}
-            error={recentFanPhotoShowsError}
-            currentUserId={user.id}
-            sessionKey={user.last_sign_in_at || ''}
-          />
-        </section>
-
-        {/* Section 3: Bookmarked Shows */}
-        <section className="space-y-4 pt-4 border-t border-slate-800">
-          <h2 className="text-xl font-semibold text-white">Bookmarked Shows ({shows.length})</h2>
-
-          {shows.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-800 p-8 text-center text-slate-400">
-              No bookmarked shows yet. Click "Bookmark Show" when viewing matching show entries.
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {groupedShows.map(([year, yearShows]) => (
-                <details
-                  key={year}
-                  open={year === defaultOpenYear}
-                  className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60"
-                >
-                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-left">
-                    <div>
-                      <p className="text-sm font-semibold text-white">{year}</p>
-                      <p className="text-xs text-slate-400">{yearShows.length} show{yearShows.length === 1 ? '' : 's'}</p>
-                    </div>
-                    <span className="rounded-full border border-slate-700 bg-slate-900 px-2.5 py-1 text-[11px] font-semibold text-slate-300">
-                      {yearShows.length} {yearShows.length === 1 ? 'show' : 'shows'}
-                    </span>
-                  </summary>
-                  <div className="grid grid-cols-1 gap-4 border-t border-slate-800 p-4 sm:grid-cols-2">
-                    {yearShows.map((show) => {
-                      const phishNetUrl =
-                        show.show_data?.phishNetUrl ||
-                        (show.show_date
-                          ? `https://phish.net/setlists/?d=${encodeURIComponent(show.show_date)}`
-                          : null);
-
-                      return (
-                        <div key={show.id} className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70 transition-all hover:border-cyan-500/40">
-                          <Link
-                            href={`/library/show/${show.show_date}`}
-                            className="block p-5"
-                          >
-                            <div className="flex items-start justify-between gap-3">
-                              <div>
-                                <span className="text-xs font-bold text-cyan-400">{show.show_date}</span>
-                                <h3 className="mt-0.5 text-lg font-semibold text-white">{show.venue_name || 'Venue Unknown'}</h3>
-                                <p className="text-xs text-slate-400">{show.location || ''}</p>
-                              </div>
-                              <div className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${show.public_photo_count > 0 ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-200' : 'border-slate-700 bg-slate-900 text-slate-400'}`}>
-                                📸 {show.public_photo_count} {show.public_photo_count === 1 ? 'photo' : 'photos'}
-                              </div>
+                    </summary>
+                    <div className="space-y-4 border-t border-slate-800 p-4">
+                      {yearGroup.groups.map((group) => (
+                        <div key={`${yearGroup.year}-${group.key}`} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+                          <div className="mb-3 flex items-center justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-semibold text-white">{group.label}</p>
+                              {group.showDate ? (
+                                <p className="text-xs text-slate-400">
+                                  {group.venueName || 'Unknown venue'}
+                                  {group.location ? ` • ${group.location}` : ''}
+                                </p>
+                              ) : (
+                                <p className="text-xs text-slate-400">Photos not matched to a show date</p>
+                              )}
                             </div>
-                            {show.user_notes && (
-                              <p className="mt-3 rounded-xl bg-slate-900/90 p-3 text-xs italic text-slate-300">
-                                "{show.user_notes}"
-                              </p>
-                            )}
-                          </Link>
-                          {phishNetUrl && (
-                            <div className="border-t border-slate-800 px-5 py-3">
-                              <a
-                                href={phishNetUrl}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-xs font-medium text-cyan-400 underline hover:text-cyan-300"
-                              >
-                                Open on phish.net ↗
-                              </a>
-                            </div>
-                          )}
+                            {group.showDate ? (
+                              <Link href={`/library/show/${group.showDate}`} className="text-xs font-medium text-cyan-400 underline hover:text-cyan-300">
+                                Open show →
+                              </Link>
+                            ) : null}
+                          </div>
+                          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                            {group.photos.map((photo) => (
+                              <div key={photo.id} className="group relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60 p-4 transition-all hover:border-cyan-500/40">
+                                <Link href={`/library/photo/${photo.id}`} className="block">
+                                  {photo.url ? (
+                                    <div className="relative mb-3 aspect-video w-full overflow-hidden rounded-xl bg-slate-900">
+                                      <img src={photo.url} alt={photo.file_name} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+                                    </div>
+                                  ) : (
+                                    <div className="mb-3 flex aspect-video w-full items-center justify-center rounded-xl bg-slate-900 text-xs text-slate-500">
+                                      Photo unavailable
+                                    </div>
+                                  )}
+                                  <div className="space-y-1 text-xs text-slate-300">
+                                    <p className="truncate font-semibold text-white">{photo.file_name}</p>
+                                    <p className="truncate text-slate-400">Current song: {photo.currentSong || 'Unknown'}</p>
+                                    {photo.timeContextLabel ? <p className="truncate text-slate-500">Context: {photo.timeContextLabel}</p> : null}
+                                  </div>
+                                </Link>
+                                <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t border-slate-800 pt-3">
+                                  <PhotoVisibilityToggle photoId={photo.id} initialIsPublic={!!photo.is_public} />
+                                  <LibraryPhotoDeleteButton
+                                    photoId={photo.id}
+                                    storagePath={photo.storage_path}
+                                    label="Delete photo"
+                                    className="rounded-lg border border-red-500/50 bg-red-500/10 px-3 py-1.5 text-xs font-semibold text-red-200 transition hover:bg-red-500/20 disabled:opacity-60"
+                                  />
+                                </div>
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      );
-                    })}
-                  </div>
-                </details>
-              ))}
-            </div>
-          )}
-        </section>
+                      ))}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : null}
 
+        {activeTab === 'recent-fan-photos' ? (
+          <section className="space-y-4">
+            {recentFanPhotoShowsError ? (
+              <div className="rounded-2xl border border-dashed border-slate-800 p-8 text-center text-slate-400">{recentFanPhotoShowsError}</div>
+            ) : groupedRecentFanShows.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-800 p-8 text-center text-slate-400">
+                No public fan photos from other users yet.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {groupedRecentFanShows.map(([year, yearShows]) => (
+                  <details key={year} open={year === defaultRecentFanYear} className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-left">
+                      <div>
+                        <p className="text-sm font-semibold text-white">{year}</p>
+                        <p className="text-xs text-slate-400">{yearShows.length} show{yearShows.length === 1 ? '' : 's'}</p>
+                      </div>
+                    </summary>
+                    <div className="grid grid-cols-1 gap-4 border-t border-slate-800 p-4 sm:grid-cols-2">
+                      {yearShows.map((show) => {
+                        const isBookmarked = bookmarkedShowDates.has(show.show_date);
+                        return (
+                          <Link key={show.show_date} href={`/library/show/${show.show_date}`} className="block rounded-2xl border border-slate-800 bg-slate-900/70 p-4 transition-all hover:border-cyan-500/40">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="text-xs font-bold text-cyan-400">{show.show_date || 'Unknown date'}</p>
+                                  {isBookmarked ? (
+                                    <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
+                                      Bookmarked
+                                    </span>
+                                  ) : null}
+                                </div>
+                                <p className="mt-0.5 truncate text-base font-semibold text-white">{show.venue_name || 'Venue Unknown'}</p>
+                                {show.location ? <p className="truncate text-xs text-slate-400">{show.location}</p> : null}
+                              </div>
+                              <span className="shrink-0 rounded-full border border-cyan-500/40 bg-cyan-500/10 px-2.5 py-1 text-[11px] font-semibold text-cyan-200">
+                                +{show.new_public_photo_count} {show.new_public_photo_count === 1 ? 'photo' : 'photos'}
+                              </span>
+                            </div>
+                            <p className="mt-2 text-xs text-slate-400">Latest: {formatRecentFanPhotoTimestamp(show.latest_public_photo_at)}</p>
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : null}
+
+        {activeTab === 'bookmarked-shows' ? (
+          <section className="space-y-4">
+            {showsError ? (
+              <div className="rounded-2xl border border-dashed border-slate-800 p-8 text-center text-slate-400">{showsError}</div>
+            ) : groupedSavedShows.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-800 p-8 text-center text-slate-400">
+                No bookmarked shows yet. Click "Bookmark Show" when viewing matching show entries.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {groupedSavedShows.map(([year, yearShows]) => (
+                  <details key={year} open={year === defaultBookmarkedYear} className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-left">
+                      <div>
+                        <p className="text-sm font-semibold text-white">{year}</p>
+                        <p className="text-xs text-slate-400">{yearShows.length} show{yearShows.length === 1 ? '' : 's'}</p>
+                      </div>
+                    </summary>
+                    <div className="grid grid-cols-1 gap-4 border-t border-slate-800 p-4 sm:grid-cols-2">
+                      {yearShows.map((show) => {
+                        const phishNetUrl =
+                          show.show_data?.phishNetUrl ||
+                          (show.show_date
+                            ? `https://phish.net/setlists/?d=${encodeURIComponent(show.show_date)}`
+                            : null);
+                        return (
+                          <div key={show.id} className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70 transition-all hover:border-cyan-500/40">
+                            <Link href={`/library/show/${show.show_date}`} className="block p-5">
+                              <div className="flex items-start justify-between gap-3">
+                                <div>
+                                  <span className="text-xs font-bold text-cyan-400">{show.show_date}</span>
+                                  <h3 className="mt-0.5 text-lg font-semibold text-white">{show.venue_name || 'Venue Unknown'}</h3>
+                                  <p className="text-xs text-slate-400">{show.location || ''}</p>
+                                </div>
+                                <div className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-semibold ${show.public_photo_count > 0 ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-200' : 'border-slate-700 bg-slate-900 text-slate-400'}`}>
+                                  📸 {show.public_photo_count} {show.public_photo_count === 1 ? 'photo' : 'photos'}
+                                </div>
+                              </div>
+                              {show.user_notes ? (
+                                <p className="mt-3 rounded-xl bg-slate-900/90 p-3 text-xs italic text-slate-300">
+                                  "{show.user_notes}"
+                                </p>
+                              ) : null}
+                            </Link>
+                            {phishNetUrl ? (
+                              <div className="border-t border-slate-800 px-5 py-3">
+                                <a href={phishNetUrl} target="_blank" rel="noreferrer" className="text-xs font-medium text-cyan-400 underline hover:text-cyan-300">
+                                  Open on phish.net ↗
+                                </a>
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : null}
+
+        {activeTab === 'favorites' ? (
+          <section className="space-y-4">
+            {favoritePhotosError ? (
+              <div className="rounded-2xl border border-dashed border-slate-800 p-8 text-center text-slate-400">{favoritePhotosError}</div>
+            ) : groupedFavoritePhotos.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-slate-800 p-8 text-center text-slate-400">
+                No liked photos yet.
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {groupedFavoritePhotos.map((yearGroup) => (
+                  <details key={yearGroup.year} open={yearGroup.year === defaultFavoritesYear} className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60">
+                    <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-left">
+                      <div>
+                        <p className="text-sm font-semibold text-white">{yearGroup.year}</p>
+                        <p className="text-xs text-slate-400">{yearGroup.groups.length} grouping{yearGroup.groups.length === 1 ? '' : 's'}</p>
+                      </div>
+                    </summary>
+                    <div className="space-y-4 border-t border-slate-800 p-4">
+                      {yearGroup.groups.map((group) => (
+                        <div key={`${yearGroup.year}-${group.key}`} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+                          <div className="mb-3 flex items-center justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-semibold text-white">{group.label}</p>
+                              {group.showDate ? (
+                                <p className="text-xs text-slate-400">
+                                  {group.venueName || 'Unknown venue'}
+                                  {group.location ? ` • ${group.location}` : ''}
+                                </p>
+                              ) : (
+                                <p className="text-xs text-slate-400">Photos not matched to a show date</p>
+                              )}
+                            </div>
+                            {group.showDate ? (
+                              <Link href={`/library/show/${group.showDate}`} className="text-xs font-medium text-cyan-400 underline hover:text-cyan-300">
+                                Open show →
+                              </Link>
+                            ) : null}
+                          </div>
+                          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                            {group.photos.map((photo) => {
+                              const creatorName = photo.creator?.display_name || photo.creator?.username || 'Anonymous';
+                              return (
+                                <div key={photo.id} className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60 transition-all hover:border-rose-500/30">
+                                  {photo.url ? (
+                                    <div className="relative aspect-square w-full overflow-hidden bg-slate-900">
+                                      <img src={photo.url} alt={photo.file_name || 'Fan photo'} className="h-full w-full object-cover" />
+                                    </div>
+                                  ) : (
+                                    <div className="flex aspect-square w-full items-center justify-center bg-slate-900 text-xs text-slate-500">
+                                      Photo unavailable
+                                    </div>
+                                  )}
+                                  <div className="space-y-2 p-4">
+                                    <p className="truncate text-xs font-medium text-cyan-300">
+                                      🎵 {photo.currentSong || 'Unknown'}
+                                    </p>
+                                    {photo.timeContextLabel ? (
+                                      <p className="truncate text-[11px] text-slate-500">Context: {photo.timeContextLabel}</p>
+                                    ) : null}
+                                    <div className="flex items-center justify-between gap-3">
+                                      <p className="truncate text-xs text-slate-400">By {creatorName}</p>
+                                      <PhotoLikeButton
+                                        photoId={photo.id}
+                                        initialLikeCount={photo.like_count}
+                                        initialLikedByMe={true}
+                                        size="sm"
+                                      />
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : null}
       </div>
     </main>
   );
