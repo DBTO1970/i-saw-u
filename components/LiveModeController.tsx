@@ -6,6 +6,7 @@ import { capturePhotoWithNativeCamera } from '../lib/native-camera-photo';
 import { extractExifFromLocalImageUri } from '../lib/local-image-exif';
 import { createClient as createSupabaseClient } from '../lib/supabase/client';
 import { sendClientDiagnostic, withClientDiagnosticError } from '../lib/client-diagnostics';
+import { deleteLivePhotoAsset, readLivePhotoAssetBlob, saveLivePhotoAsset } from '../lib/local-photo-store';
 import {
   createOfflineUploadQueueManager,
   type OfflineUploadQueueManager,
@@ -23,12 +24,23 @@ async function uploadQueuedPhoto(task: OfflineUploadTask): Promise<void> {
   };
 
   try {
-    const localResponse = await fetch(task.localFileUri);
-    if (!localResponse.ok) {
-      throw new Error(`Unable to load queued local photo URI (status ${localResponse.status}).`);
+    let localBlob: Blob | null = null;
+    if (task.localAssetId) {
+      localBlob = await readLivePhotoAssetBlob(task.localAssetId);
+      if (!localBlob) {
+        throw new Error('Queued live photo data could not be found in local storage.');
+      }
     }
-
-    const localBlob = await localResponse.blob();
+    if (!localBlob && task.localFileUri) {
+      const localResponse = await fetch(task.localFileUri);
+      if (!localResponse.ok) {
+        throw new Error(`Unable to load queued local photo URI (status ${localResponse.status}).`);
+      }
+      localBlob = await localResponse.blob();
+    }
+    if (!localBlob) {
+      throw new Error('No local live photo data is available for this queued task.');
+    }
     const { webpBlob, originalName, appliedMaxHeight, appliedMaxWidth, appliedQuality } = await convertToAdaptiveWebP(localBlob, {
       targetMaxBytes: 1_900_000,
       maxWidth: 1920,
@@ -97,12 +109,19 @@ async function uploadQueuedPhoto(task: OfflineUploadTask): Promise<void> {
     if (!response.ok || !payload?.success) {
       throw new Error(payload?.error || 'Failed to upload queued live-mode photo.');
     }
+    if (task.localAssetId) {
+      await deleteLivePhotoAsset(task.localAssetId);
+    }
   } catch (error) {
     void sendClientDiagnostic({
       event: 'live-mode-upload-failed',
       severity: 'error',
       source: 'live-mode-controller',
-      details: baseDetails,
+      details: {
+        ...baseDetails,
+        hasLocalAssetId: Boolean(task.localAssetId),
+        hasLocalFileUri: Boolean(task.localFileUri),
+      },
       error: withClientDiagnosticError(error),
     });
     throw error;
@@ -195,9 +214,19 @@ export default function LiveModeController() {
     try {
       const capturedPhoto = await capturePhotoWithNativeCamera({ preferredCamera: 'environment' });
       const exifMetadata = await extractExifFromLocalImageUri(capturedPhoto.localFileUri);
+      let localAssetId: string | null = null;
+      try {
+        localAssetId = await saveLivePhotoAsset(
+          capturedPhoto.file,
+          capturedPhoto.file.name || 'live-mode-photo.jpg',
+          capturedPhoto.file.type || 'image/jpeg',
+        );
+      } finally {
+        capturedPhoto.revokeLocalFileUri();
+      }
 
       queueManager.addTask({
-        localFileUri: capturedPhoto.localFileUri,
+        localAssetId,
         exifMetadata,
         fileName: capturedPhoto.file.name || 'live-mode-photo.jpg',
         mimeType: capturedPhoto.file.type || 'image/jpeg',

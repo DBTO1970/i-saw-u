@@ -198,4 +198,36 @@ describe('OfflineUploadQueueManager', () => {
     await manager.processPendingTasks(processor);
     expect(processor).toHaveBeenCalledTimes(1);
   });
+
+  it('accepts durable local asset IDs without blob URIs', async () => {
+    const storage = createMemoryStorage();
+    const runtimeHarness = createRuntime();
+    runtimeHarness.goOffline();
+    const manager = new OfflineUploadQueueManager({
+      storage,
+      runtime: runtimeHarness.runtime,
+      storageKey: 'test-queue-asset-id',
+    });
+
+    manager.addTask({
+      localAssetId: 'asset-123',
+      fileName: 'asset.jpg',
+      mimeType: 'image/jpeg',
+      exifMetadata: {
+        rawDateTimeOriginal: null,
+        dateTimeOriginal: null,
+        timeTaken: null,
+        gpsLatitude: null,
+        gpsLongitude: null,
+        gpsLatitudeRef: null,
+        gpsLongitudeRef: null,
+        cameraModel: null,
+      },
+    });
+
+    const tasks = manager.getTasks();
+    expect(tasks).toHaveLength(1);
+    expect(tasks[0].localAssetId).toBe('asset-123');
+    expect(tasks[0].localFileUri).toBeNull();
+  });
 });

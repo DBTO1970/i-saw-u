@@ -4,7 +4,8 @@ export type OfflineUploadTaskStatus = 'pending' | 'processing' | 'failed';
 
 export type OfflineUploadTask = {
   id: string;
-  localFileUri: string;
+  localFileUri?: string | null;
+  localAssetId?: string | null;
   exifMetadata: CleanPhotoExif;
   fileName: string;
   mimeType: string;
@@ -17,7 +18,8 @@ export type OfflineUploadTask = {
 };
 
 export type AddOfflineUploadTaskInput = {
-  localFileUri: string;
+  localFileUri?: string | null;
+  localAssetId?: string | null;
   exifMetadata: CleanPhotoExif;
   fileName?: string;
   mimeType?: string;
@@ -91,7 +93,12 @@ function safeParseQueue(rawValue: string | null): OfflineUploadTask[] {
     return [];
   }
 
-  return parsed.filter((task) => task && typeof task.localFileUri === 'string' && typeof task.id === 'string');
+  return parsed.filter((task) => {
+    if (!task || typeof task.id !== 'string') {
+      return false;
+    }
+    return typeof task.localFileUri === 'string' || typeof task.localAssetId === 'string';
+  });
 }
 
 function createTaskId() {
@@ -166,15 +173,16 @@ export class OfflineUploadQueueManager {
   }
 
   addTask(input: AddOfflineUploadTaskInput) {
-    if (!input.localFileUri) {
-      throw new Error('A local file URI is required when adding an offline upload task.');
+    if (!input.localFileUri && !input.localAssetId) {
+      throw new Error('A local file URI or local asset ID is required when adding an offline upload task.');
     }
 
     const now = this.runtime.now();
     const nowIso = new Date(now).toISOString();
     const task: OfflineUploadTask = {
       id: createTaskId(),
-      localFileUri: input.localFileUri,
+      localFileUri: input.localFileUri || null,
+      localAssetId: input.localAssetId || null,
       exifMetadata: input.exifMetadata,
       fileName: input.fileName || 'camera-photo.jpg',
       mimeType: input.mimeType || 'image/jpeg',
