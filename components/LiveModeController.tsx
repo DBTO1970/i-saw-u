@@ -5,6 +5,7 @@ import { convertToAdaptiveWebP } from '../lib/image-optimizer';
 import { capturePhotoWithNativeCamera } from '../lib/native-camera-photo';
 import { extractExifFromLocalImageUri } from '../lib/local-image-exif';
 import { createClient as createSupabaseClient } from '../lib/supabase/client';
+import { sendClientDiagnostic, withClientDiagnosticError } from '../lib/client-diagnostics';
 import {
   createOfflineUploadQueueManager,
   type OfflineUploadQueueManager,
@@ -14,79 +15,97 @@ import {
 const LIVE_MODE_STORAGE_KEY = 'liveModeEnabledV1';
 
 async function uploadQueuedPhoto(task: OfflineUploadTask): Promise<void> {
-  const localResponse = await fetch(task.localFileUri);
-  if (!localResponse.ok) {
-    throw new Error(`Unable to load queued local photo URI (status ${localResponse.status}).`);
-  }
+  const baseDetails = {
+    taskId: task.id,
+    fileName: task.fileName,
+    mimeType: task.mimeType,
+    attemptCount: task.attemptCount,
+  };
 
-  const localBlob = await localResponse.blob();
-  const { webpBlob, originalName, appliedMaxHeight, appliedMaxWidth, appliedQuality } = await convertToAdaptiveWebP(localBlob, {
-    targetMaxBytes: 1_900_000,
-    maxWidth: 1920,
-    maxHeight: 1920,
-  });
+  try {
+    const localResponse = await fetch(task.localFileUri);
+    if (!localResponse.ok) {
+      throw new Error(`Unable to load queued local photo URI (status ${localResponse.status}).`);
+    }
 
-  const supabase = createSupabaseClient();
-  const { data: { user }, error: userError } = await supabase.auth.getUser();
-  if (userError || !user) {
-    throw new Error('You must be signed in to upload live-mode photos.');
-  }
-
-  const photoId = crypto.randomUUID();
-  const storagePath = `${user.id}/${photoId}.webp`;
-  const storageUpload = await supabase.storage
-    .from('user-photos')
-    .upload(storagePath, webpBlob, {
-      contentType: 'image/webp',
-      upsert: true,
+    const localBlob = await localResponse.blob();
+    const { webpBlob, originalName, appliedMaxHeight, appliedMaxWidth, appliedQuality } = await convertToAdaptiveWebP(localBlob, {
+      targetMaxBytes: 1_900_000,
+      maxWidth: 1920,
+      maxHeight: 1920,
     });
 
-  if (storageUpload.error) {
-    throw new Error(storageUpload.error.message || 'Failed to upload live-mode photo to storage.');
-  }
+    const supabase = createSupabaseClient();
+    const { data: { user }, error: userError } = await supabase.auth.getUser();
+    if (userError || !user) {
+      throw new Error('You must be signed in to upload live-mode photos.');
+    }
 
-  const formData = new FormData();
-  formData.append('photoId', photoId);
-  formData.append('storagePath', storagePath);
-  formData.append('fileSize', String(webpBlob.size));
-  formData.append('mimeType', 'image/webp');
-  formData.append('fileName', task.fileName || originalName);
-  formData.append('dateTaken', task.exifMetadata.dateTimeOriginal || '');
-  formData.append('timeTaken', task.exifMetadata.timeTaken || '');
+    const photoId = crypto.randomUUID();
+    const storagePath = `${user.id}/${photoId}.webp`;
+    const storageUpload = await supabase.storage
+      .from('user-photos')
+      .upload(storagePath, webpBlob, {
+        contentType: 'image/webp',
+        upsert: true,
+      });
 
-  if (task.exifMetadata.gpsLatitude != null) {
-    formData.append('gpsLatitude', String(task.exifMetadata.gpsLatitude));
-  }
-  if (task.exifMetadata.gpsLongitude != null) {
-    formData.append('gpsLongitude', String(task.exifMetadata.gpsLongitude));
-  }
+    if (storageUpload.error) {
+      throw new Error(storageUpload.error.message || 'Failed to upload live-mode photo to storage.');
+    }
 
-  formData.append(
-    'rawExif',
-    JSON.stringify({
-      ...task.exifMetadata,
-      source: 'live-mode',
-      compressionMetadata: {
-        format: 'image/webp',
-        targetMaxBytes: 1_900_000,
-        outputBytes: webpBlob.size,
-        appliedQuality,
-        appliedMaxWidth,
-        appliedMaxHeight,
-      },
-    }),
-  );
+    const formData = new FormData();
+    formData.append('photoId', photoId);
+    formData.append('storagePath', storagePath);
+    formData.append('fileSize', String(webpBlob.size));
+    formData.append('mimeType', 'image/webp');
+    formData.append('fileName', task.fileName || originalName);
+    formData.append('dateTaken', task.exifMetadata.dateTimeOriginal || '');
+    formData.append('timeTaken', task.exifMetadata.timeTaken || '');
 
-  const response = await fetch('/api/library/save-photo', {
-    method: 'POST',
-    body: formData,
-  });
-  const contentType = response.headers.get('content-type') || '';
-  const payload = contentType.includes('application/json')
-    ? await response.json()
-    : { success: false, error: await response.text() };
-  if (!response.ok || !payload?.success) {
-    throw new Error(payload?.error || 'Failed to upload queued live-mode photo.');
+    if (task.exifMetadata.gpsLatitude != null) {
+      formData.append('gpsLatitude', String(task.exifMetadata.gpsLatitude));
+    }
+    if (task.exifMetadata.gpsLongitude != null) {
+      formData.append('gpsLongitude', String(task.exifMetadata.gpsLongitude));
+    }
+
+    formData.append(
+      'rawExif',
+      JSON.stringify({
+        ...task.exifMetadata,
+        source: 'live-mode',
+        compressionMetadata: {
+          format: 'image/webp',
+          targetMaxBytes: 1_900_000,
+          outputBytes: webpBlob.size,
+          appliedQuality,
+          appliedMaxWidth,
+          appliedMaxHeight,
+        },
+      }),
+    );
+
+    const response = await fetch('/api/library/save-photo', {
+      method: 'POST',
+      body: formData,
+    });
+    const contentType = response.headers.get('content-type') || '';
+    const payload = contentType.includes('application/json')
+      ? await response.json()
+      : { success: false, error: await response.text() };
+    if (!response.ok || !payload?.success) {
+      throw new Error(payload?.error || 'Failed to upload queued live-mode photo.');
+    }
+  } catch (error) {
+    void sendClientDiagnostic({
+      event: 'live-mode-upload-failed',
+      severity: 'error',
+      source: 'live-mode-controller',
+      details: baseDetails,
+      error: withClientDiagnosticError(error),
+    });
+    throw error;
   }
 }
 
@@ -97,6 +116,7 @@ export default function LiveModeController() {
   const [isOnline, setIsOnline] = useState<boolean | null>(null);
   const [queueStats, setQueueStats] = useState({ total: 0, pending: 0, failed: 0, processing: 0 });
   const [statusMessage, setStatusMessage] = useState('');
+  const [queueErrorSummary, setQueueErrorSummary] = useState('');
 
   useEffect(() => {
     const manager = createOfflineUploadQueueManager();
@@ -137,6 +157,9 @@ export default function LiveModeController() {
 
     const unsubscribe = queueManager.subscribe(() => {
       setQueueStats(queueManager.getStats());
+      const tasks = queueManager.getTasks();
+      const firstErrorTask = tasks.find((task) => task.lastError);
+      setQueueErrorSummary(firstErrorTask?.lastError || '');
     });
 
     queueManager.start(uploadQueuedPhoto);
@@ -182,12 +205,40 @@ export default function LiveModeController() {
 
       setStatusMessage('Photo captured and queued for background upload.');
       await queueManager.processPendingTasks();
+      const nextStats = queueManager.getStats();
+      if (nextStats.pending === 0 && nextStats.failed === 0) {
+        setStatusMessage('Photo uploaded to your library.');
+      } else if (nextStats.failed > 0) {
+        setStatusMessage('Some queued uploads failed. Tap "Process Queue Now" after checking your connection/sign-in.');
+      } else if (nextStats.pending > 0) {
+        setStatusMessage('Photo queued. Tap "Process Queue Now" to retry immediately.');
+      }
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : 'Unable to capture and queue photo.');
     } finally {
       setIsCapturing(false);
     }
   }, [isLiveModeEnabled, queueManager]);
+
+  const handleProcessQueueNow = useCallback(async () => {
+    if (!queueManager) {
+      setStatusMessage('Live Mode queue is still initializing. Please try again.');
+      return;
+    }
+
+    setStatusMessage('Processing queued uploads...');
+    await queueManager.processPendingTasks();
+    const nextStats = queueManager.getStats();
+    if (nextStats.pending === 0 && nextStats.failed === 0) {
+      setStatusMessage('All queued uploads are processed.');
+      return;
+    }
+    if (nextStats.failed > 0) {
+      setStatusMessage('Some uploads failed. Check status below and retry when ready.');
+      return;
+    }
+    setStatusMessage('Uploads are queued for retry.');
+  }, [queueManager]);
 
   return (
     <section className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 p-4">
@@ -220,7 +271,7 @@ export default function LiveModeController() {
         </span>
       </div>
 
-      <div className="mt-3">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         <button
           type="button"
           disabled={!queueManager || !isLiveModeEnabled || isCapturing}
@@ -229,11 +280,25 @@ export default function LiveModeController() {
         >
           {isCapturing ? 'Capturing...' : 'Take Live Photo'}
         </button>
+        <button
+          type="button"
+          disabled={!queueManager || queueStats.pending === 0 || queueStats.processing > 0}
+          onClick={handleProcessQueueNow}
+          className="rounded-xl border border-cyan-400/50 px-4 py-2 text-sm font-semibold text-cyan-100 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {queueStats.processing > 0 ? 'Processing...' : 'Process Queue Now'}
+        </button>
       </div>
 
       {statusMessage ? (
         <p className="mt-3 rounded-lg border border-cyan-400/30 bg-slate-950/40 px-3 py-2 text-xs text-cyan-100">
           {statusMessage}
+        </p>
+      ) : null}
+
+      {queueErrorSummary ? (
+        <p className="mt-2 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+          Last queue error: {queueErrorSummary}
         </p>
       ) : null}
     </section>
