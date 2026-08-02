@@ -174,6 +174,11 @@ export default function LiveModeController() {
   const [statusMessage, setStatusMessage] = useState('');
   const [queueErrorSummary, setQueueErrorSummary] = useState('');
   const [latestCapturedPhotoForDeviceSave, setLatestCapturedPhotoForDeviceSave] = useState<File | null>(null);
+  const [isQueueActionRunning, setIsQueueActionRunning] = useState(false);
+  const [queueActionStartedAt, setQueueActionStartedAt] = useState<number | null>(null);
+  const [queueActionStartedTotal, setQueueActionStartedTotal] = useState(0);
+  const [queueActionNow, setQueueActionNow] = useState<number | null>(null);
+  const [lastQueueRunCompletedAt, setLastQueueRunCompletedAt] = useState<number | null>(null);
   const [liveModeShowQuery, setLiveModeShowQuery] = useState('');
   const [isSearchingShows, setIsSearchingShows] = useState(false);
   const [showSearchMessage, setShowSearchMessage] = useState('');
@@ -232,6 +237,18 @@ export default function LiveModeController() {
       queueManager.stop();
     };
   }, [queueManager]);
+
+  useEffect(() => {
+    if (!isQueueActionRunning) {
+      return;
+    }
+    const intervalId = window.setInterval(() => {
+      setQueueActionNow(Date.now());
+    }, 1000);
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [isQueueActionRunning]);
 
   const setLiveModeEnabled = useCallback((enabled: boolean) => {
     setIsLiveModeEnabled(enabled);
@@ -305,6 +322,11 @@ export default function LiveModeController() {
     }
 
     try {
+      const startStats = queueManager.getStats();
+      setQueueActionStartedTotal(startStats.pending + startStats.failed);
+      setQueueActionStartedAt(Date.now());
+      setQueueActionNow(Date.now());
+      setIsQueueActionRunning(true);
       const currentStats = queueManager.getStats();
       if (currentStats.pending === 0 && currentStats.failed > 0) {
         queueManager.retryFailedTasks();
@@ -326,6 +348,9 @@ export default function LiveModeController() {
       setStatusMessage('Uploads are queued for retry.');
     } catch (error) {
       setStatusMessage(error instanceof Error ? error.message : 'Unable to process queued uploads.');
+    } finally {
+      setIsQueueActionRunning(false);
+      setLastQueueRunCompletedAt(Date.now());
     }
   }, [queueManager]);
 
@@ -333,9 +358,27 @@ export default function LiveModeController() {
     if (!queueManager) {
       return;
     }
+    const startStats = queueManager.getStats();
+    setQueueActionStartedTotal(startStats.pending + startStats.failed);
+    setQueueActionStartedAt(Date.now());
+    setQueueActionNow(Date.now());
+    setIsQueueActionRunning(true);
     queueManager.retryFailedTasks();
     setStatusMessage('Retrying failed queue items now...');
-    await queueManager.processPendingTasks();
+    try {
+      await queueManager.processPendingTasks();
+      const nextStats = queueManager.getStats();
+      if (nextStats.pending === 0 && nextStats.failed === 0) {
+        setStatusMessage('All queued uploads are processed.');
+      } else if (nextStats.failed > 0) {
+        setStatusMessage('Some uploads still failed. You can retry again or clear stale/failed items.');
+      } else {
+        setStatusMessage('Uploads are queued for retry.');
+      }
+    } finally {
+      setIsQueueActionRunning(false);
+      setLastQueueRunCompletedAt(Date.now());
+    }
   }, [queueManager]);
 
   const handleClearFailedQueueItems = useCallback(() => {
@@ -412,6 +455,14 @@ export default function LiveModeController() {
       setIsSavingToDevice(false);
     }
   }, [latestCapturedPhotoForDeviceSave]);
+
+  const queueActionElapsedSeconds = isQueueActionRunning && queueActionStartedAt
+    ? Math.max(0, Math.floor((((queueActionNow || Date.now()) - queueActionStartedAt)) / 1000))
+    : 0;
+  const queueRemainingTotal = queueStats.pending + queueStats.failed;
+  const queueProcessedCount = queueActionStartedTotal > 0
+    ? Math.max(0, queueActionStartedTotal - queueRemainingTotal)
+    : 0;
 
   return (
     <section className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 p-4">
@@ -553,6 +604,16 @@ export default function LiveModeController() {
           {isSavingToDevice ? 'Opening Save Flow...' : 'Save Latest to Device Photos'}
         </button>
       </div>
+
+      {isQueueActionRunning ? (
+        <p className="mt-3 rounded-lg border border-emerald-400/40 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-100">
+          Queue worker active... elapsed {queueActionElapsedSeconds}s • processed {queueProcessedCount}/{queueActionStartedTotal || queueRemainingTotal} • in-flight {queueStats.processing}
+        </p>
+      ) : lastQueueRunCompletedAt ? (
+        <p className="mt-3 rounded-lg border border-cyan-400/30 bg-slate-950/40 px-3 py-2 text-xs text-cyan-100">
+          Last queue run finished at {new Date(lastQueueRunCompletedAt).toLocaleTimeString()}.
+        </p>
+      ) : null}
 
       {statusMessage ? (
         <p className="mt-3 rounded-lg border border-cyan-400/30 bg-slate-950/40 px-3 py-2 text-xs text-cyan-100">
