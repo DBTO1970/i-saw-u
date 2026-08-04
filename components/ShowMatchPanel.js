@@ -139,7 +139,7 @@ function createEmptyPhotoMetadata() {
     rawGpsLongitude: null,
     rawGpsLatitudeRef: null,
     rawGpsLongitudeRef: null,
-    showStartTime: '19:30',
+    showStartTime: '20:00',
     sidecarFileName: '',
     sidecarUsed: false,
     userTags: [],
@@ -272,7 +272,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
   const [isLoadingAutocomplete, setIsLoadingAutocomplete] = useState(false);
   const [sharedImportHistory, setSharedImportHistory] = useState([]);
   const [uploaderSessionKey, setUploaderSessionKey] = useState(0);
-  const [showStartTime, setShowStartTime] = useState('19:30');
+  const [showStartTime, setShowStartTime] = useState('20:00');
   const [currentSongLabel, setCurrentSongLabel] = useState('');
   const [timeContextLabel, setTimeContextLabel] = useState('');
   const [calibrationMetadata, setCalibrationMetadata] = useState(null);
@@ -643,7 +643,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
     setLocationSearchResults([]);
     setLocationSearchMessage('');
     setAutocompleteSuggestions({ venues: [], cities: [], states: [] });
-    setShowStartTime('19:30');
+    setShowStartTime('20:00');
     setCurrentSongLabel('');
     setTimeContextLabel('');
     setCalibrationMetadata(null);
@@ -677,7 +677,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
     <LiveModeController
       defaultShowData={effectiveShow || null}
       defaultMatchedShowDate={effectiveShow?.date || ''}
-      defaultShowStartTime={showStartTime || '19:30'}
+      defaultShowStartTime={showStartTime || '20:00'}
     />
 
     {initialSharedPhoto ? (

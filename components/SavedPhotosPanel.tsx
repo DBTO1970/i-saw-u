@@ -88,9 +88,15 @@ export default function SavedPhotosPanel({ photos, photosError }: SavedPhotosPan
   const renderPhotoCard = (photo: Record<string, unknown>) => (
     <div key={photo.id as string} className="group relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60 p-4 transition-all hover:border-cyan-500/40">
       <Link href={`/library/photo/${photo.id as string}`} className="block">
-        {photo.url ? (
+        {photo.thumb_url || photo.url ? (
           <div className="relative mb-3 aspect-video w-full overflow-hidden rounded-xl bg-slate-900">
-            <img src={photo.url as string} alt={photo.file_name as string} className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105" />
+            <img
+              src={(photo.thumb_url as string) || (photo.url as string)}
+              alt={photo.file_name as string}
+              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+              loading="lazy"
+              decoding="async"
+            />
           </div>
         ) : (
           <div className="mb-3 flex aspect-video w-full items-center justify-center rounded-xl bg-slate-900 text-xs text-slate-500">

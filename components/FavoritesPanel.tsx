@@ -89,9 +89,15 @@ export default function FavoritesPanel({ photos, photosError }: FavoritesPanelPr
     const creatorName = (creator?.display_name as string) || (creator?.username as string) || 'Anonymous';
     return (
       <div key={photo.id as string} className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60 transition-all hover:border-rose-500/30">
-        {photo.url ? (
+        {photo.thumb_url || photo.url ? (
           <div className="relative aspect-square w-full overflow-hidden bg-slate-900">
-            <img src={photo.url as string} alt={(photo.file_name as string) || 'Fan photo'} className="h-full w-full object-cover" />
+            <img
+              src={(photo.thumb_url as string) || (photo.url as string)}
+              alt={(photo.file_name as string) || 'Fan photo'}
+              className="h-full w-full object-cover"
+              loading="lazy"
+              decoding="async"
+            />
           </div>
         ) : (
           <div className="flex aspect-square w-full items-center justify-center bg-slate-900 text-xs text-slate-500">

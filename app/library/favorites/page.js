@@ -120,12 +120,14 @@ export default async function FavoritesPage() {
                     className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60 transition-all hover:border-rose-500/30"
                   >
                     {/* Photo */}
-                    {photo.url ? (
+                    {photo.thumb_url || photo.url ? (
                       <div className="relative aspect-square w-full overflow-hidden bg-slate-900">
                         <img
-                          src={photo.url}
+                          src={photo.thumb_url || photo.url}
                           alt={photo.file_name || 'Fan photo'}
                           className="h-full w-full object-cover"
+                          loading="lazy"
+                          decoding="async"
                         />
                       </div>
                     ) : (

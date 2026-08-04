@@ -2,6 +2,24 @@
 
 import { revalidatePath } from 'next/cache';
 import { createAdminClient, createClient } from '../../lib/supabase/server';
+import { toThumbnailStoragePath } from '../../lib/supabase/config';
+
+function expandStoragePaths(storagePaths) {
+  return Array.from(
+    new Set(
+      storagePaths.flatMap((storagePath) => {
+        if (!storagePath) {
+          return [];
+        }
+
+        const thumbnailStoragePath = toThumbnailStoragePath(storagePath);
+        return thumbnailStoragePath && thumbnailStoragePath !== storagePath
+          ? [storagePath, thumbnailStoragePath]
+          : [storagePath];
+      })
+    )
+  );
+}
 
 export async function deleteAllUserPhotosAction() {
   try {
@@ -21,7 +39,7 @@ export async function deleteAllUserPhotosAction() {
       return { success: false, error: photosError.message };
     }
 
-    const storagePaths = Array.from(new Set((photos || []).map((photo) => photo.storage_path).filter(Boolean)));
+    const storagePaths = expandStoragePaths((photos || []).map((photo) => photo.storage_path).filter(Boolean));
 
     if (storagePaths.length > 0) {
       const { error: storageError } = await supabase.storage.from('user-photos').remove(storagePaths);
@@ -76,7 +94,7 @@ export async function deleteUserAccountAction() {
       return { success: false, error: photosError.message };
     }
 
-    const storagePaths = Array.from(new Set((photos || []).map((photo) => photo.storage_path).filter(Boolean)));
+    const storagePaths = expandStoragePaths((photos || []).map((photo) => photo.storage_path).filter(Boolean));
     if (storagePaths.length > 0) {
       const { error: storageError } = await adminClient.storage.from('user-photos').remove(storagePaths);
       if (storageError && !/not found|does not exist/i.test(storageError.message || '')) {

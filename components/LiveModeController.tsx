@@ -1,13 +1,14 @@
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
-import { convertToAdaptiveWebP } from '../lib/image-optimizer';
+import { processPhotoForUpload } from '../lib/image-optimizer';
 import { capturePhotoWithNativeCamera } from '../lib/native-camera-photo';
 import { extractExifFromLocalImageUri } from '../lib/local-image-exif';
 import { searchLiveModeShowsByQuery } from '../app/actions/shows';
 import { createClient as createSupabaseClient } from '../lib/supabase/client';
 import { sendClientDiagnostic, withClientDiagnosticError } from '../lib/client-diagnostics';
 import { deleteLivePhotoAsset, readLivePhotoAssetBlob, saveLivePhotoAsset } from '../lib/local-photo-store';
+import { toThumbnailStoragePath } from '../lib/supabase/config';
 import {
   createOfflineUploadQueueManager,
   type OfflineUploadQueueManager,
@@ -85,12 +86,8 @@ async function uploadQueuedPhoto(task: OfflineUploadTask): Promise<void> {
     if (!localBlob) {
       throw new Error('No local live photo data is available for this queued task.');
     }
-    const { webpBlob, originalName, appliedMaxHeight, appliedMaxWidth, appliedQuality } = await convertToAdaptiveWebP(localBlob, {
-      targetMaxBytes: 1_900_000,
-      maxWidth: 1920,
-      maxHeight: 1920,
-    });
-    const photoHash = await computeBlobSha256Hex(webpBlob);
+    const { fullBlob, thumbBlob, originalName, fullWidth, fullHeight, thumbWidth, thumbHeight } = await processPhotoForUpload(localBlob);
+    const photoHash = await computeBlobSha256Hex(fullBlob);
 
     const supabase = createSupabaseClient();
     const { data: { user }, error: userError } = await supabase.auth.getUser();
@@ -99,10 +96,12 @@ async function uploadQueuedPhoto(task: OfflineUploadTask): Promise<void> {
     }
 
     const photoId = crypto.randomUUID();
-    const storagePath = `${user.id}/${photoId}.webp`;
+    const showFolder = task.matchedShowDate || photoId;
+    const storagePath = `${user.id}/${showFolder}/${photoId}.webp`;
+    const thumbStoragePath = toThumbnailStoragePath(storagePath);
     const storageUpload = await supabase.storage
       .from('user-photos')
-      .upload(storagePath, webpBlob, {
+      .upload(storagePath, fullBlob, {
         contentType: 'image/webp',
         cacheControl: '31536000',
         upsert: true,
@@ -112,10 +111,27 @@ async function uploadQueuedPhoto(task: OfflineUploadTask): Promise<void> {
       throw new Error(storageUpload.error.message || 'Failed to upload live-mode photo to storage.');
     }
 
+    if (thumbStoragePath) {
+      const thumbUpload = await supabase.storage
+        .from('user-photos')
+        .upload(thumbStoragePath, thumbBlob, {
+          contentType: 'image/webp',
+          cacheControl: '31536000',
+          upsert: true,
+        });
+
+      if (thumbUpload.error) {
+        await supabase.storage.from('user-photos').remove([storagePath]);
+        throw new Error(thumbUpload.error.message || 'Failed to upload live-mode thumbnail to storage.');
+      }
+    }
+
     const formData = new FormData();
     formData.append('photoId', photoId);
     formData.append('storagePath', storagePath);
-    formData.append('fileSize', String(webpBlob.size));
+    formData.append('thumbStoragePath', thumbStoragePath || '');
+    formData.append('fileSize', String(fullBlob.size));
+    formData.append('thumbFileSize', String(thumbBlob.size));
     formData.append('mimeType', 'image/webp');
     formData.append('photoHash', photoHash);
     formData.append('fileName', task.fileName || originalName);
@@ -142,11 +158,18 @@ async function uploadQueuedPhoto(task: OfflineUploadTask): Promise<void> {
         source: 'live-mode',
         compressionMetadata: {
           format: 'image/webp',
-          targetMaxBytes: 1_900_000,
-          outputBytes: webpBlob.size,
-          appliedQuality,
-          appliedMaxWidth,
-          appliedMaxHeight,
+          full: {
+            outputBytes: fullBlob.size,
+            width: fullWidth,
+            height: fullHeight,
+            quality: 0.85,
+          },
+          thumbnail: {
+            outputBytes: thumbBlob.size,
+            width: thumbWidth,
+            height: thumbHeight,
+            quality: 0.7,
+          },
         },
         showMetadata: {
           matchedShowDate: task.matchedShowDate || null,
@@ -195,7 +218,7 @@ async function uploadQueuedPhoto(task: OfflineUploadTask): Promise<void> {
 export default function LiveModeController({
   defaultShowData = null,
   defaultMatchedShowDate = '',
-  defaultShowStartTime = '19:30',
+  defaultShowStartTime = '20:00',
 }: LiveModeControllerProps) {
   const [queueManager, setQueueManager] = useState<OfflineUploadQueueManager | null>(null);
   const [isAccordionOpen, setIsAccordionOpen] = useState(false);
@@ -218,7 +241,7 @@ export default function LiveModeController({
   const [showSearchMessage, setShowSearchMessage] = useState('');
   const [showSearchResults, setShowSearchResults] = useState<LiveModeSessionShow[]>([]);
   const [selectedLiveModeShow, setSelectedLiveModeShow] = useState<LiveModeSessionShow | null>(null);
-  const [liveModeShowStartTime, setLiveModeShowStartTime] = useState(defaultShowStartTime || '19:30');
+  const [liveModeShowStartTime, setLiveModeShowStartTime] = useState(defaultShowStartTime || '20:00');
   const [sessionMode, setSessionMode] = useState<'show-match' | 'session-label'>('show-match');
   const [sessionLabel, setSessionLabel] = useState<'pre-show' | 'in-between-shows' | 'post-show'>('pre-show');
 

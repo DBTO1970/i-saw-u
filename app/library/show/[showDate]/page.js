@@ -222,14 +222,17 @@ export default async function ShowDetailPage({ params }) {
                     href={`/library/photo/${photo.id}`}
                     className="group relative overflow-hidden rounded-xl border border-slate-800 bg-slate-900 transition-all hover:border-cyan-500/50 hover:shadow-lg hover:shadow-cyan-900/20"
                   >
-                    {photo.url ? (
+                    {photo.thumb_url || photo.url ? (
                       <div className="relative aspect-square w-full">
                         <Image
-                          src={photo.url}
+                          src={photo.thumb_url || photo.url}
                           alt={photo.file_name || 'Photo'}
                           fill
                           className="object-cover transition-transform group-hover:scale-105"
                           sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                          loading="lazy"
+                          decoding="async"
+                          unoptimized
                         />
                       </div>
                     ) : (
