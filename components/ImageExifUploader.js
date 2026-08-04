@@ -2,10 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ExifReader from 'exifreader';
-import { convertToAdaptiveWebP } from '../lib/image-optimizer';
+import { processPhotoForUpload } from '../lib/image-optimizer';
 import { capturePhotoWithNativeCamera } from '../lib/native-camera-photo';
 import { sendClientDiagnostic, withClientDiagnosticError } from '../lib/client-diagnostics';
 import { createClient as createSupabaseClient } from '../lib/supabase/client';
+import { toThumbnailStoragePath } from '../lib/supabase/config';
 
 const emptyMetadata = {
   dateTimeOriginal: 'Not available',
@@ -750,30 +751,30 @@ export default function ImageExifUploader({
     });
 
     try {
-      let webpBlob;
+      let fullBlob;
+      let thumbBlob;
       let originalName;
-      let appliedQuality = 0.85;
-      let appliedMaxWidth = 1920;
-      let appliedMaxHeight = 1920;
+      let fullWidth = 1920;
+      let fullHeight = 1920;
+      let thumbWidth = 400;
+      let thumbHeight = 400;
       let photoHash = '';
       try {
-        // 1. Client-side WebP optimization
-        const converted = await convertToAdaptiveWebP(sourceFile, {
-          targetMaxBytes: 1_900_000,
-          maxWidth: 1920,
-          maxHeight: 1920,
-        });
-        webpBlob = converted.webpBlob;
+        const converted = await processPhotoForUpload(sourceFile);
+        fullBlob = converted.fullBlob;
+        thumbBlob = converted.thumbBlob;
         originalName = converted.originalName;
-        appliedQuality = converted.appliedQuality;
-        appliedMaxWidth = converted.appliedMaxWidth;
-        appliedMaxHeight = converted.appliedMaxHeight;
-        photoHash = await computeBlobSha256Hex(webpBlob);
+        fullWidth = converted.fullWidth;
+        fullHeight = converted.fullHeight;
+        thumbWidth = converted.thumbWidth;
+        thumbHeight = converted.thumbHeight;
+        photoHash = await computeBlobSha256Hex(fullBlob);
       } catch (convertError) {
         logSavePipelineDiagnostic('convert-failed', sourceFile, {
-          maxWidth: 1920,
-          maxHeight: 1920,
-          targetMaxBytes: 1_900_000,
+          fullMaxWidth: 1920,
+          fullMaxHeight: 1920,
+          thumbMaxWidth: 400,
+          thumbMaxHeight: 400,
         }, convertError);
         throw convertError;
       }
@@ -785,31 +786,56 @@ export default function ImageExifUploader({
       }
 
       const photoId = crypto.randomUUID();
-      const storagePath = `${user.id}/${photoId}.webp`;
+      const showFolder = matchedShowDate || photoId;
+      const storagePath = `${user.id}/${showFolder}/${photoId}.webp`;
+      const thumbStoragePath = toThumbnailStoragePath(storagePath);
 
       let formData;
       try {
-        const uploadResult = await supabase.storage
+        const fullUploadResult = await supabase.storage
           .from('user-photos')
-          .upload(storagePath, webpBlob, {
+          .upload(storagePath, fullBlob, {
             contentType: 'image/webp',
+            cacheControl: '31536000',
             upsert: true,
           });
 
-        if (uploadResult.error) {
+        if (fullUploadResult.error) {
           logSavePipelineDiagnostic('upload-failed', sourceFile, {
             phase: 'direct-storage-upload',
             storagePath,
-            message: uploadResult.error.message || null,
-          }, uploadResult.error);
-          throw new Error(uploadResult.error.message || 'Failed to upload photo to storage.');
+            message: fullUploadResult.error.message || null,
+          }, fullUploadResult.error);
+          throw new Error(fullUploadResult.error.message || 'Failed to upload photo to storage.');
+        }
+
+        if (thumbStoragePath) {
+          const thumbUploadResult = await supabase.storage
+            .from('user-photos')
+            .upload(thumbStoragePath, thumbBlob, {
+              contentType: 'image/webp',
+              cacheControl: '31536000',
+              upsert: true,
+            });
+
+          if (thumbUploadResult.error) {
+            await supabase.storage.from('user-photos').remove([storagePath]);
+            logSavePipelineDiagnostic('upload-failed', sourceFile, {
+              phase: 'thumbnail-storage-upload',
+              storagePath: thumbStoragePath,
+              message: thumbUploadResult.error.message || null,
+            }, thumbUploadResult.error);
+            throw new Error(thumbUploadResult.error.message || 'Failed to upload thumbnail to storage.');
+          }
         }
 
         // 2. Build metadata FormData for API (no binary file payload)
         formData = new FormData();
         formData.append('photoId', photoId);
         formData.append('storagePath', storagePath);
-        formData.append('fileSize', String(webpBlob.size));
+        formData.append('thumbStoragePath', thumbStoragePath || '');
+        formData.append('fileSize', String(fullBlob.size));
+        formData.append('thumbFileSize', String(thumbBlob.size));
         formData.append('mimeType', 'image/webp');
         formData.append('photoHash', photoHash);
         formData.append('fileName', selectedFileName || originalName);
@@ -837,11 +863,18 @@ export default function ImageExifUploader({
             ...metadataForSave,
             compressionMetadata: {
               format: 'image/webp',
-              targetMaxBytes: 1_900_000,
-              outputBytes: webpBlob.size,
-              appliedQuality,
-              appliedMaxWidth,
-              appliedMaxHeight,
+              full: {
+                outputBytes: fullBlob.size,
+                width: fullWidth,
+                height: fullHeight,
+                quality: 0.85,
+              },
+              thumbnail: {
+                outputBytes: thumbBlob.size,
+                width: thumbWidth,
+                height: thumbHeight,
+                quality: 0.7,
+              },
             },
             showMetadata: {
               matchedShowDate: matchedShowDate || null,

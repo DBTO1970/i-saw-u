@@ -196,8 +196,16 @@ export default function ShowSetlistPhotos({ setGroups = [], photos = [], current
                     onClick={() => setSelectedPhoto(photo)}
                     className="group relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70 text-left transition hover:border-cyan-500/40"
                   >
-                    {photo.url ? (
-                      <img src={photo.url} alt={photo.file_name || 'Fan photo'} className="h-auto w-full object-contain" />
+                    {photo.thumb_url || photo.url ? (
+                      <div className="relative aspect-[4/3] w-full overflow-hidden bg-slate-900">
+                        <img
+                          src={photo.thumb_url || photo.url}
+                          alt={photo.file_name || 'Fan photo'}
+                          className="h-full w-full object-cover"
+                          loading="lazy"
+                          decoding="async"
+                        />
+                      </div>
                     ) : (
                       <div className="flex aspect-[4/3] w-full items-center justify-center bg-slate-800 text-sm text-slate-500">
                         Photo unavailable
@@ -284,11 +292,13 @@ export default function ShowSetlistPhotos({ setGroups = [], photos = [], current
             </div>
 
             <div className="max-h-[80vh] overflow-y-auto p-4">
-              {selectedPhoto.url ? (
+              {selectedPhoto.photo_url || selectedPhoto.url ? (
                 <img
-                  src={selectedPhoto.url}
+                  src={selectedPhoto.photo_url || selectedPhoto.url}
                   alt={selectedPhoto.file_name || 'Fan photo'}
                   className="mx-auto h-auto w-full object-contain"
+                  loading="eager"
+                  decoding="async"
                 />
               ) : (
                 <div className="flex aspect-[4/3] w-full items-center justify-center rounded-2xl border border-dashed border-slate-800 bg-slate-900/80 text-sm text-slate-400">

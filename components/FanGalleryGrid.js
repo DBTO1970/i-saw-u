@@ -21,12 +21,14 @@ export default function FanGalleryGrid({ photos = [], currentUserId = null }) {
               onClick={() => setSelectedPhoto(photo)}
               className="group relative overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 text-left transition-all hover:border-cyan-500/50 hover:shadow-lg hover:shadow-cyan-900/20"
             >
-              {photo.url ? (
+              {photo.thumb_url || photo.url ? (
                 <div className="relative aspect-square w-full overflow-hidden">
                   <img
-                    src={photo.url}
+                    src={photo.thumb_url || photo.url}
                     alt={photo.file_name || 'Fan photo'}
                     className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    loading="lazy"
+                    decoding="async"
                   />
                 </div>
               ) : (
@@ -74,11 +76,13 @@ export default function FanGalleryGrid({ photos = [], currentUserId = null }) {
             </div>
 
             <div className="p-4" onClick={(event) => event.stopPropagation()}>
-              {selectedPhoto.url ? (
+              {selectedPhoto.photo_url || selectedPhoto.url ? (
                 <img
-                  src={selectedPhoto.url || ''}
+                  src={selectedPhoto.photo_url || selectedPhoto.url || ''}
                   alt={selectedPhoto.file_name || 'Fan photo'}
                   className="max-h-[80vh] w-full object-contain"
+                  loading="eager"
+                  decoding="async"
                 />
               ) : (
                 <div className="flex h-[60vh] w-full items-center justify-center rounded-2xl border border-dashed border-slate-700 bg-slate-900/80 text-sm text-slate-500">

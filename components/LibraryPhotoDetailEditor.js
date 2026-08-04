@@ -138,12 +138,14 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
   return (
     <section className="space-y-4 md:space-y-6">
       <div className="overflow-hidden rounded-2xl border border-cyan-500/20 bg-gradient-to-b from-slate-900/95 via-slate-950/85 to-slate-950/70 shadow-xl shadow-cyan-950/20 md:rounded-3xl md:border-cyan-400/25 md:shadow-2xl md:shadow-cyan-950/40">
-        {initialPhoto.url ? (
+        {initialPhoto.photo_url || initialPhoto.url ? (
           <div className="p-2 sm:p-4 md:p-6">
             <img
-              src={initialPhoto.url}
+              src={initialPhoto.photo_url || initialPhoto.url}
               alt={initialPhoto.file_name}
               className="mx-auto h-auto w-full rounded-xl object-contain ring-1 ring-white/10 md:max-h-[82vh] md:rounded-2xl"
+              loading="eager"
+              decoding="async"
             />
           </div>
         ) : (
@@ -155,7 +157,7 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
         </div>
       </div>
 
-      {isFullscreenOpen && initialPhoto.url ? (
+      {isFullscreenOpen && (initialPhoto.photo_url || initialPhoto.url) ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4" onClick={() => setIsFullscreenOpen(false)}>
           <button
             type="button"
@@ -165,10 +167,12 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
             Close
           </button>
           <img
-            src={initialPhoto.url}
+            src={initialPhoto.photo_url || initialPhoto.url}
             alt={initialPhoto.file_name}
             className="max-h-full max-w-full object-contain"
             onClick={(event) => event.stopPropagation()}
+            loading="eager"
+            decoding="async"
           />
         </div>
       ) : null}
@@ -253,7 +257,7 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
         <ShowMatchCard
           photoMetadata={showCardPhotoMetadata}
           show={showForCard}
-          showStartTime={form.showStartTime || '19:30'}
+        showStartTime={form.showStartTime || '20:00'}
           onShowStartTimeChange={handleShowStartTimeChange}
           initialIsBookmarked={!!savedShowMetadata}
           initialTimeContextLabel={initialTimeContextLabel}

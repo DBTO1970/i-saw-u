@@ -338,7 +338,8 @@ function contextLabelToSnapValue(contextLabel) {
   return '';
 }
 
-function inferTimeContext(photoMetadata, show, setlistEntries, startTimeString = '19:30') {
+function inferTimeContext(photoMetadata, show, setlistEntries, startTimeString = '20:00') {
+  const normalizedStartTimeString = typeof startTimeString === 'string' && startTimeString ? startTimeString : '20:00';
   const photoDateTime = parsePhotoDateTime(photoMetadata);
   const showDate = parseShowDate(show);
   if (!photoDateTime || !showDate) {
@@ -367,7 +368,7 @@ function inferTimeContext(photoMetadata, show, setlistEntries, startTimeString =
     };
   }
 
-  const showStart = new Date(`${show.date}T${startTimeString}:00`);
+  const showStart = new Date(`${show.date}T${normalizedStartTimeString}:00`);
   const { segments, durationCoverage } = buildSongTimeline(setlistEntries, showStart);
   const showEnd = segments.length > 0
     ? new Date(segments[segments.length - 1].end.getTime())
@@ -585,18 +586,18 @@ function formatMinutesTo24h(totalMinutes) {
 
 function parseTimeStringToMinutes(value) {
   if (typeof value !== 'string') {
-    return 19 * 60 + 30;
+    return 20 * 60;
   }
 
   const match = value.trim().match(/^(\d{1,2}):(\d{2})$/);
   if (!match) {
-    return 19 * 60 + 30;
+    return 20 * 60;
   }
 
   const hours = Number(match[1]);
   const minutes = Number(match[2]);
   if (Number.isNaN(hours) || Number.isNaN(minutes) || hours < 0 || hours > 23 || minutes < 0 || minutes > 59) {
-    return 19 * 60 + 30;
+    return 20 * 60;
   }
 
   return hours * 60 + minutes;
@@ -605,7 +606,7 @@ function parseTimeStringToMinutes(value) {
 export default function ShowMatchCard({
   photoMetadata,
   show,
-  showStartTime = '19:30',
+  showStartTime = '20:00',
   onShowStartTimeChange,
   onTimeContextChange,
   onCalibrationChange,
@@ -618,6 +619,10 @@ export default function ShowMatchCard({
   const [snapMessage, setSnapMessage] = useState('');
   const [calibrationSource, setCalibrationSource] = useState('manual-slider');
   const [calibrationSongLabel, setCalibrationSongLabel] = useState('');
+  const [calibrationConfidence, setCalibrationConfidence] = useState('low');
+  const [calibrationDriftMinutes, setCalibrationDriftMinutes] = useState(0);
+  const [calibrationBoundaryMatch, setCalibrationBoundaryMatch] = useState(false);
+  const [calibrationBoundarySongLabels, setCalibrationBoundarySongLabels] = useState([]);
   const [manualTimeContextOverride, setManualTimeContextOverride] = useState(null);
 
   useEffect(() => {
@@ -652,8 +657,8 @@ export default function ShowMatchCard({
   const photoTimestamp = useMemo(() => parsePhotoDateTime(photoMetadata), [photoMetadata]);
   const setlistSongTimeline = useMemo(() => buildSetlistSongTimeline(setlistEntries), [setlistEntries]);
   const defaultCalibration = useMemo(
-    () => calibrateShowStartTime(photoTimestamp, setlistEntries),
-    [photoTimestamp, setlistEntries]
+    () => calibrateShowStartTime(photoTimestamp, setlistEntries, { expectedShowStartTime: showStartTime }),
+    [photoTimestamp, setlistEntries, showStartTime]
   );
   const dateSource = photoMetadata?.dateSource || 'unknown';
   const timeSource = photoMetadata?.timeSource || dateSource || 'unknown';
@@ -690,14 +695,22 @@ export default function ShowMatchCard({
   }, [initialContextOverride]);
 
   useEffect(() => {
-    if (!defaultCalibration || showStartTime !== '19:30') {
+    if (!defaultCalibration || showStartTime !== '20:00') {
       return;
     }
 
     setStartMinutes(defaultCalibration.showStartMinutes);
     setCalibrationSource(defaultCalibration.calibrationSource || 'typical-delay');
     setCalibrationSongLabel(defaultCalibration.matchedSongLabel || '');
-    setSnapMessage(`Calibrated from EXIF using typical timing near ${defaultCalibration.matchedSongLabel}.`);
+    setCalibrationConfidence(defaultCalibration.confidence || 'medium');
+    setCalibrationDriftMinutes(defaultCalibration.clockDriftMinutes || 0);
+    setCalibrationBoundaryMatch(Boolean(defaultCalibration.boundaryMatch));
+    setCalibrationBoundarySongLabels(defaultCalibration.boundarySongLabels || []);
+    setSnapMessage(
+      defaultCalibration.boundaryMatch
+        ? `Calibrated from EXIF near ${defaultCalibration.matchedSongLabels?.join(' / ') || defaultCalibration.matchedSongLabel}.`
+        : `Calibrated from EXIF using typical timing near ${defaultCalibration.matchedSongLabel}.`
+    );
   }, [defaultCalibration, showStartTime]);
 
   const onTimeContextChangeRef = useRef(onTimeContextChange);
@@ -709,19 +722,16 @@ export default function ShowMatchCard({
   const onCalibrationChangeRef = useRef(onCalibrationChange);
   onCalibrationChangeRef.current = onCalibrationChange;
   useEffect(() => {
-    const confidence = calibrationSource === 'snap-to-song'
-      ? 'high'
-      : calibrationSource === 'typical-delay'
-        ? 'medium'
-        : 'low';
-
     onCalibrationChangeRef.current?.({
       source: calibrationSource,
-      confidence,
+      confidence: calibrationConfidence,
       matchedSongLabel: calibrationSongLabel || timeContext?.songLabel || null,
       showStartTime: startTime24h,
+      clockDriftMinutes: calibrationDriftMinutes,
+      boundaryMatch: calibrationBoundaryMatch,
+      boundarySongLabels: calibrationBoundarySongLabels,
     });
-  }, [calibrationSource, calibrationSongLabel, effectiveTimeContext?.songLabel, startTime24h]);
+  }, [calibrationSource, calibrationConfidence, calibrationDriftMinutes, calibrationBoundaryMatch, calibrationBoundarySongLabels, calibrationSongLabel, effectiveTimeContext?.songLabel, startTime24h]);
 
   const [phishInLinks, setPhishInLinks] = useState({
     showUrl: null,
@@ -835,7 +845,13 @@ export default function ShowMatchCard({
     setStartMinutes(defaultCalibration.showStartMinutes);
     setCalibrationSource(defaultCalibration.calibrationSource || 'typical-delay');
     setCalibrationSongLabel(defaultCalibration.matchedSongLabel || '');
-    setSnapMessage(`Calibrated from EXIF using typical timing near ${defaultCalibration.matchedSongLabel}.`);
+    setCalibrationConfidence(defaultCalibration.confidence || 'medium');
+    setCalibrationDriftMinutes(defaultCalibration.clockDriftMinutes || 0);
+    setSnapMessage(
+      defaultCalibration.boundaryMatch
+        ? `Calibrated from EXIF near ${defaultCalibration.matchedSongLabels?.join(' / ') || defaultCalibration.matchedSongLabel}.`
+        : `Calibrated from EXIF using typical timing near ${defaultCalibration.matchedSongLabel}.`
+    );
   };
 
   const handleSnapToSong = (value) => {
@@ -906,7 +922,15 @@ export default function ShowMatchCard({
     setStartMinutes(snapResult.showStartMinutes);
     setCalibrationSource('snap-to-song');
     setCalibrationSongLabel(snapResult.matchedSongLabel || '');
-    setSnapMessage(`Snapped to ${snapResult.matchedSongLabel}.`);
+    setCalibrationConfidence(snapResult.confidence || 'high');
+    setCalibrationDriftMinutes(snapResult.clockDriftMinutes || 0);
+    setCalibrationBoundaryMatch(Boolean(snapResult.boundaryMatch));
+    setCalibrationBoundarySongLabels(snapResult.boundarySongLabels || []);
+    setSnapMessage(
+      snapResult.boundaryMatch
+        ? `Snapped near ${snapResult.matchedSongLabels?.join(' / ') || snapResult.matchedSongLabel} (fuzzy boundary).`
+        : `Snapped to ${snapResult.matchedSongLabel}.`
+    );
   };
 
   return (
@@ -976,7 +1000,13 @@ export default function ShowMatchCard({
 
             {defaultCalibration ? (
               <p className="mt-2 text-xs text-slate-400">
-                Auto estimate from EXIF suggests <span className="font-semibold text-cyan-300">{defaultCalibration.showStartTime}</span> around {defaultCalibration.matchedSongLabel}.
+                Auto estimate from EXIF suggests <span className="font-semibold text-cyan-300">{defaultCalibration.showStartTime}</span> around {defaultCalibration.matchedSongLabel}
+                {defaultCalibration.boundaryMatch ? ' (fuzzy boundary)' : ''}.
+              </p>
+            ) : null}
+            {defaultCalibration ? (
+              <p className="mt-1 text-xs text-slate-500">
+                Confidence: {defaultCalibration.confidence || 'medium'}{typeof defaultCalibration.clockDriftMinutes === 'number' && defaultCalibration.clockDriftMinutes !== 0 ? `, clock drift ${defaultCalibration.clockDriftMinutes > 0 ? '+' : ''}${defaultCalibration.clockDriftMinutes} min` : ''}
               </p>
             ) : null}
 
@@ -1117,7 +1147,7 @@ export default function ShowMatchCard({
             ) : null}
             <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
               <dt className="text-slate-500">Show start time</dt>
-              <dd className="sm:text-right">{showStartTime || '19:30'}</dd>
+              <dd className="sm:text-right">{showStartTime || '20:00'}</dd>
             </div>
             <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
               <dt className="text-slate-500">Latitude</dt>

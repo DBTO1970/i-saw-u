@@ -2,6 +2,11 @@
 
 import { createClient } from '../../lib/supabase/server';
 import { createHash } from 'crypto';
+import {
+  buildPublicStorageUrl,
+  buildPublicThumbnailUrl,
+  toThumbnailStoragePath,
+} from '../../lib/supabase/config';
 
 function toObjectOrEmpty(value) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -71,6 +76,27 @@ function withNormalizedVisibility(photo) {
   };
 }
 
+function withPhotoUrls(photo) {
+  if (!photo?.storage_path) {
+    return {
+      ...photo,
+      photo_url: null,
+      thumb_url: null,
+      url: null,
+    };
+  }
+
+  const photoUrl = buildPublicStorageUrl(photo.storage_path);
+  const thumbUrl = buildPublicThumbnailUrl(photo.storage_path) || photoUrl;
+
+  return {
+    ...photo,
+    photo_url: photoUrl,
+    thumb_url: thumbUrl,
+    url: photoUrl,
+  };
+}
+
 function buildVisibilityAwareRawExif(rawExifValue, isPublic) {
   const nextRawExif = { ...toObjectOrEmpty(rawExifValue) };
   nextRawExif.is_public = !!isPublic;
@@ -136,11 +162,16 @@ async function removeStorageObjectSafely(supabase, storagePath) {
   if (!storagePath) {
     return;
   }
+  const thumbnailStoragePath = toThumbnailStoragePath(storagePath);
+  const storagePaths = thumbnailStoragePath && thumbnailStoragePath !== storagePath
+    ? [storagePath, thumbnailStoragePath]
+    : [storagePath];
   try {
-    await supabase.storage.from('user-photos').remove([storagePath]);
+    await supabase.storage.from('user-photos').remove(storagePaths);
   } catch (error) {
     console.error('Storage cleanup failed after photo save error:', {
       storagePath,
+      thumbnailStoragePath,
       error,
     });
   }
@@ -185,7 +216,8 @@ export async function savePhotoToLibrary(formData) {
     }
 
     let photoId = hasDirectUploadMetadata ? directPhotoId : crypto.randomUUID();
-    let storagePath = hasDirectUploadMetadata ? directStoragePath : `${user.id}/${photoId}.webp`;
+    const showFolder = matchedShowDate || photoId;
+    let storagePath = hasDirectUploadMetadata ? directStoragePath : `${user.id}/${showFolder}/${photoId}.webp`;
     let mimeType = hasDirectUploadMetadata && typeof directMimeType === 'string' && directMimeType.trim()
       ? directMimeType.trim()
       : 'image/webp';
@@ -437,15 +469,11 @@ export async function getUserLibraryPhotos() {
       }
     }
 
-    // Generate signed URLs for private photos
+    // Resolve photo URLs through the local storage proxy.
     const photosWithUrls = await Promise.all(
       normalizedPhotos.map(async (photo) => {
-        const { data: signedData } = await supabase.storage
-          .from('user-photos')
-          .createSignedUrl(photo.storage_path, 60 * 60); // 1 hour valid link
         return {
-          ...photo,
-          url: signedData?.signedUrl || null,
+          ...withPhotoUrls(photo),
           like_count: likeCountByPhoto.get(photo.id) || 0,
         };
       })
@@ -480,19 +508,16 @@ export async function getUserLibraryPhotoById(photoId) {
       return { photo: null, error: error?.message || 'Photo not found' };
     }
 
-    const { data: signedData } = await supabase.storage
-      .from('user-photos')
-      .createSignedUrl(photo.storage_path, 60 * 60);
-
     const { count: likeCount } = await supabase
       .from('photo_likes')
       .select('id', { count: 'exact', head: true })
       .eq('photo_id', photo.id);
 
+    const normalizedPhoto = withNormalizedVisibility(photo);
+
     return {
       photo: {
-        ...withNormalizedVisibility(photo),
-        url: signedData?.signedUrl || null,
+        ...withPhotoUrls(normalizedPhoto),
         like_count: likeCount || 0,
       },
       error: null,
@@ -801,7 +826,7 @@ export async function getUserSavedShowByDate(showDate) {
 
 /**
  * Fetch all user-library photos that match a given show date,
- * with signed URLs included.
+ * with proxy URLs included.
  */
 export async function getUserPhotosForShow(showDate) {
   try {
@@ -827,10 +852,7 @@ export async function getUserPhotosForShow(showDate) {
 
     const photosWithUrls = await Promise.all(
       normalizedPhotos.map(async (photo) => {
-        const { data: signedData } = await supabase.storage
-          .from('user-photos')
-          .createSignedUrl(photo.storage_path, 60 * 60);
-        return { ...photo, url: signedData?.signedUrl || null };
+        return withPhotoUrls(photo);
       })
     );
 
@@ -853,7 +875,11 @@ export async function deletePhotoFromLibrary(photoId, storagePath) {
     }
 
     if (storagePath) {
-      const { error: storageError } = await supabase.storage.from('user-photos').remove([storagePath]);
+      const thumbnailStoragePath = toThumbnailStoragePath(storagePath);
+      const storagePaths = thumbnailStoragePath && thumbnailStoragePath !== storagePath
+        ? [storagePath, thumbnailStoragePath]
+        : [storagePath];
+      const { error: storageError } = await supabase.storage.from('user-photos').remove(storagePaths);
       if (storageError) {
         return { success: false, error: storageError.message };
       }
@@ -1069,15 +1095,10 @@ export async function getPublicPhotosForShow(showDate) {
 
     const photosWithUrls = await Promise.all(
       publicPhotos.map(async (photo) => {
-        const { data: signedData } = await supabase.storage
-          .from('user-photos')
-          .createSignedUrl(photo.storage_path, 60 * 60);
-
         const creator = profileById.get(photo.user_id) || null;
 
         return {
-          ...photo,
-          url: signedData?.signedUrl || null,
+          ...withPhotoUrls(photo),
           isMine: photo.user_id === user.id,
           like_count: likeCountByPhoto.get(photo.id) || 0,
           liked_by_me: likedByMeSet.has(photo.id),
@@ -1156,7 +1177,7 @@ export async function togglePhotoLike(photoId) {
   }
 }
 /**
- * Fetch all public photos the current user has liked, with signed URLs and show metadata.
+ * Fetch all public photos the current user has liked, with proxy URLs and show metadata.
  */
 export async function getUserLikedPhotos() {
   try {
@@ -1223,18 +1244,13 @@ export async function getUserLikedPhotos() {
 
     const profileById = new Map((profiles || []).map((p) => [p.id, p]));
 
-    // Generate signed URLs and assemble
+    // Generate proxy URLs and assemble
     const photosWithUrls = await Promise.all(
       normalizedPhotos.map(async (photo) => {
-        const { data: signedData } = await supabase.storage
-          .from('user-photos')
-          .createSignedUrl(photo.storage_path, 60 * 60);
-
         const creator = profileById.get(photo.user_id) || null;
 
         return {
-          ...photo,
-          url: signedData?.signedUrl || null,
+          ...withPhotoUrls(photo),
           like_count: likeCountByPhoto.get(photo.id) || 0,
           liked_by_me: true,
           liked_at: likedAtByPhotoId.get(photo.id) || null,
