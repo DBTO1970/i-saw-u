@@ -793,6 +793,7 @@ export default function ImageExifUploader({
           .from('user-photos')
           .upload(storagePath, webpBlob, {
             contentType: 'image/webp',
+            cacheControl: '31536000',
             upsert: true,
           });
 

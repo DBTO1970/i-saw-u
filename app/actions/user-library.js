@@ -206,6 +206,7 @@ export async function savePhotoToLibrary(formData) {
         .from('user-photos')
         .upload(storagePath, buffer, {
           contentType: 'image/webp',
+          cacheControl: '31536000',
           upsert: true,
         });
 

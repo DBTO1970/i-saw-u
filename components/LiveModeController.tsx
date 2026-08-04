@@ -104,6 +104,7 @@ async function uploadQueuedPhoto(task: OfflineUploadTask): Promise<void> {
       .from('user-photos')
       .upload(storagePath, webpBlob, {
         contentType: 'image/webp',
+        cacheControl: '31536000',
         upsert: true,
       });
 
