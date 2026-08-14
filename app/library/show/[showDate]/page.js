@@ -57,16 +57,17 @@ export default async function ShowDetailPage({ params }) {
     redirect('/');
   }
 
+  const { show: savedShow } = await getUserSavedShowByDate(showDate);
+  const savedArtistName = savedShow?.show_data?.artistName || 'Phish';
+
   const [
-    { show: savedShow },
-    { show: liveShow },
-    { photos },
-    publicGalleryResult,
+   { show: liveShow },
+   { photos },
+   publicGalleryResult,
   ] = await Promise.all([
-    getUserSavedShowByDate(showDate),
-    getShowByDate(showDate),
-    getUserPhotosForShow(showDate),
-    getPublicPhotosForShow(showDate),
+   getShowByDate(showDate, savedArtistName),
+   getUserPhotosForShow(showDate),
+   getPublicPhotosForShow(showDate),
   ]);
 
   // Combine: prefer live Phish.net data for rich details; fall back to saved row
@@ -76,10 +77,10 @@ export default async function ShowDetailPage({ params }) {
     ? savedShow.show_data
     : null;
 
-  const phishNetUrl =
-    showData?.phishNetUrl ||
-    `https://phish.net/setlists/?d=${encodeURIComponent(showDate)}`;
-  const phishInUrl = showData?.showUrl || `https://phish.in/${showDate}`;
+  const artistName = showData?.artistName || savedShow?.show_data?.artistName || 'Show';
+  const isPhishShow = String(showData?.provider || savedShow?.show_data?.provider || '').toLowerCase() === 'phishnet';
+  const phishNetUrl = showData?.phishNetUrl || (isPhishShow ? `https://phish.net/setlists/?d=${encodeURIComponent(showDate)}` : null);
+  const phishInUrl = isPhishShow ? (showData?.showUrl || `https://phish.in/${showDate}`) : null;
 
   const setlist = showData?.setlist || [];
   const showHeaderText = showData?.venueName || savedShow?.venue_name || 'Unknown Venue';
@@ -126,7 +127,7 @@ export default async function ShowDetailPage({ params }) {
         <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-6">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <span className="text-xs font-bold uppercase tracking-widest text-cyan-400">Phish</span>
+              <span className="text-xs font-bold uppercase tracking-widest text-cyan-400">{artistName}</span>
               <h1 className="mt-1 text-2xl font-bold text-white">{showHeaderText}</h1>
               {showLocation ? <p className="text-sm text-slate-400">{showLocation}</p> : null}
               <p className="mt-1 text-base font-semibold text-slate-300">{formatDate(showDate)}</p>
@@ -140,14 +141,16 @@ export default async function ShowDetailPage({ params }) {
               >
                 phish.net ↗
               </a>
-              <a
-                href={phishInUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded-lg border border-purple-700/50 bg-purple-800/50 px-4 py-2 text-xs font-semibold text-purple-200 transition hover:bg-purple-700/60"
-              >
-                phish.in ↗
-              </a>
+              {phishInUrl ? (
+                <a
+                  href={phishInUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-lg border border-purple-700/50 bg-purple-800/50 px-4 py-2 text-xs font-semibold text-purple-200 transition hover:bg-purple-700/60"
+                >
+                  phish.in ↗
+                </a>
+              ) : null}
               <ShowBookmarkButton
                 showDate={showDate}
                 showData={showData}
@@ -168,11 +171,17 @@ export default async function ShowDetailPage({ params }) {
           </div>
         ) : (
           <div className="rounded-xl border border-dashed border-slate-800 p-6 text-center text-sm text-slate-400">
-            Could not load show data. Check back later or{' '}
-            <a href={phishNetUrl} target="_blank" rel="noreferrer" className="text-cyan-400 underline">
-              view on phish.net
-            </a>
-            .
+            Could not load show data. Check back later.
+            {phishNetUrl ? (
+              <>
+                {' '}
+                or{' '}
+                <a href={phishNetUrl} target="_blank" rel="noreferrer" className="text-cyan-400 underline">
+                  view the source show page
+                </a>
+                .
+              </>
+            ) : null}
           </div>
         )}
 

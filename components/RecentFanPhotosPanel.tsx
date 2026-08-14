@@ -21,6 +21,18 @@ function formatRecentFanPhotoTimestamp(timestamp: string | null | undefined): st
   return parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
+function getArtistName(show: RecentFanShow): string {
+  const showData = show && typeof show === 'object' ? (show.show_data as Record<string, unknown> | undefined) : undefined;
+  const showMetadata = showData?.showMetadata && typeof showData.showMetadata === 'object' ? (showData.showMetadata as Record<string, unknown>) : undefined;
+  return (
+    (showData?.artistName as string | undefined)
+    || (showData?.artist_name as string | undefined)
+    || (showMetadata?.artistName as string | undefined)
+    || (showMetadata?.artist_name as string | undefined)
+    || 'Show'
+  );
+}
+
 export default function RecentFanPhotosPanel({ shows, bookmarkedShowDates, error }: RecentFanPhotosPanelProps) {
   const bookmarkedSet = useMemo(() => new Set(bookmarkedShowDates), [bookmarkedShowDates]);
   const mappedShows = useMemo(
@@ -64,7 +76,7 @@ export default function RecentFanPhotosPanel({ shows, bookmarkedShowDates, error
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
-              <p className="text-xs font-bold text-cyan-400">{(show.show_date as string) || 'Unknown date'}</p>
+              <p className="text-xs font-bold text-cyan-400">{getArtistName(show)} · {(show.show_date as string) || 'Unknown date'}</p>
               {isBookmarked ? (
                 <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-300">
                   Bookmarked

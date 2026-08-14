@@ -34,6 +34,16 @@ function getRawExifObject(photo) {
     return {};
   }
 
+  function getArtistNameFromShowMetadata(showMetadata, rawExif) {
+    return (
+      showMetadata?.artistName
+      || showMetadata?.artist_name
+      || rawExif.artistName
+      || rawExif.artist_name
+      || 'Show'
+    );
+  }
+
   if (typeof raw === 'string') {
     try {
       const parsed = JSON.parse(raw);
@@ -112,6 +122,7 @@ export default async function FavoritesPage() {
                 const rawExif = getRawExifObject(photo);
                 const showMetadata = rawExif?.showMetadata && typeof rawExif.showMetadata === 'object' ? rawExif.showMetadata : {};
                 const currentSong = deriveCurrentSongLabelFromShowMetadata(showMetadata, rawExif) || null;
+                const artistName = getArtistNameFromShowMetadata(showMetadata, rawExif);
                 const creatorName = photo.creator?.display_name || photo.creator?.username || 'Anonymous';
 
                 return (
@@ -144,7 +155,7 @@ export default async function FavoritesPage() {
                           href={`/library/show/${showDate}`}
                           className="block rounded-xl border border-slate-800 bg-slate-900/60 px-3 py-2 transition hover:border-cyan-500/40"
                         >
-                          <p className="text-[11px] font-bold uppercase tracking-widest text-cyan-400">Phish · {formatDate(showDate)}</p>
+                          <p className="text-[11px] font-bold uppercase tracking-widest text-cyan-400">{artistName} · {formatDate(showDate)}</p>
                           {venueName ? <p className="mt-0.5 truncate text-sm font-semibold text-white">{venueName}</p> : null}
                           {location ? <p className="truncate text-xs text-slate-400">{location}</p> : null}
                         </Link>

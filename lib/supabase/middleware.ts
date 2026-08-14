@@ -3,13 +3,19 @@ import { NextResponse, type NextRequest } from 'next/server';
 import { getSupabasePublicKey, getSupabaseUrl } from './config';
 
 export async function updateSession(request: NextRequest) {
+  const supabaseUrl = getSupabaseUrl();
+  const supabaseKey = getSupabasePublicKey();
+  if (!supabaseUrl || !supabaseKey) {
+    return NextResponse.next({ request });
+  }
+
   let supabaseResponse = NextResponse.next({
     request,
   });
 
   const supabase = createServerClient(
-    getSupabaseUrl(),
-    getSupabasePublicKey(),
+    supabaseUrl,
+    supabaseKey,
     {
       cookies: {
         getAll() {

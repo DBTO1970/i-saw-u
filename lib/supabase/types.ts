@@ -126,6 +126,103 @@ export interface Database {
           created_at?: string;
         };
       };
+      shows: {
+        Row: {
+          id: string;
+          artist_name: string;
+          provider: 'phishnet' | 'elgoose' | 'relisten' | 'bmfsdb' | 'setlistfm';
+          external_show_id: string;
+          show_date: string;
+          venue_name: string | null;
+          city: string | null;
+          state: string | null;
+          country: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          artist_name: string;
+          provider: 'phishnet' | 'elgoose' | 'relisten' | 'bmfsdb' | 'setlistfm';
+          external_show_id: string;
+          show_date: string;
+          venue_name?: string | null;
+          city?: string | null;
+          state?: string | null;
+          country?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          artist_name?: string;
+          provider?: 'phishnet' | 'elgoose' | 'relisten' | 'bmfsdb' | 'setlistfm';
+          external_show_id?: string;
+          show_date?: string;
+          venue_name?: string | null;
+          city?: string | null;
+          state?: string | null;
+          country?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
+      setlists: {
+        Row: {
+          id: string;
+          show_id: string;
+          set_name: string;
+          set_type: 'set_1' | 'set_2' | 'encore' | 'other';
+          position: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          show_id: string;
+          set_name: string;
+          set_type?: 'set_1' | 'set_2' | 'encore' | 'other';
+          position?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          show_id?: string;
+          set_name?: string;
+          set_type?: 'set_1' | 'set_2' | 'encore' | 'other';
+          position?: number;
+          created_at?: string;
+        };
+      };
+      songs: {
+        Row: {
+          id: string;
+          setlist_id: string;
+          title: string;
+          position: number;
+          duration_seconds: number | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          setlist_id: string;
+          title: string;
+          position: number;
+          duration_seconds?: number | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          setlist_id?: string;
+          title?: string;
+          position?: number;
+          duration_seconds?: number | null;
+          created_at?: string;
+        };
+      };
+    };
+    Enums: {
+      show_provider: 'phishnet' | 'elgoose' | 'relisten' | 'bmfsdb' | 'setlistfm';
+      set_type: 'set_1' | 'set_2' | 'encore' | 'other';
     };
   };
 }

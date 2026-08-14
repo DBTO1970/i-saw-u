@@ -1,12 +1,12 @@
 # i-saw-u
 
-i-saw-u is a Next.js web app for exploring concert and event photos by matching their EXIF metadata to show history from Phish-related sources. Upload a photo, inspect its capture date and GPS details, and see whether it lines up with a known show.
+i-saw-u is a Next.js web app for exploring concert and event photos by matching their EXIF metadata to show history from dedicated artist APIs and fallback setlist sources. Upload a photo, inspect its capture date and GPS details, and see whether it lines up with a known show.
 
 ## What it does
 
 - Upload an image and preview it in the browser
 - Extract EXIF metadata such as capture date, latitude, and longitude
-- Match the photo date to a show from Phish data sources
+- Match the photo date to a show from multi-provider setlist sources (Phish.net, ElGoose, Relisten, Setlist.fm fallback)
 - Display related show information, links, and metadata when available
 - Let signed-in users save photos and matches to a personal library
 
@@ -60,6 +60,9 @@ i-saw-u is a Next.js web app for exploring concert and event photos by matching 
    NEXT_PUBLIC_SUPABASE_URL=your-supabase-url
    NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your-anon-key
    SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+   PHISHNET_API_KEY=your-phishnet-api-key
+   SETLISTFM_API_KEY=your-setlistfm-api-key
+   RELISTEN_API_BASE_URL=https://relisten.net/api/v1
    ```
 
 5. Run the development server:

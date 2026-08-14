@@ -123,6 +123,25 @@ function formatVenueSearchGap(days) {
 }
 
 const SHARED_IMPORT_HISTORY_KEY = 'sharedImportHistoryV1';
+const ARTIST_OPTIONS = [
+  { value: 'phish', label: 'Phish', artistName: 'Phish' },
+  { value: 'dead', label: 'Grateful Dead / Dead & Co', artistName: 'Grateful Dead / Dead & Co' },
+  { value: 'billy', label: 'Billy Strings', artistName: 'Billy Strings' },
+  { value: 'goose', label: 'Goose', artistName: 'Goose' },
+  { value: 'other', label: 'Other artists (Powered by Setlist.fm)', artistName: '' },
+];
+
+function getArtistOptionLabel(value) {
+  return ARTIST_OPTIONS.find((entry) => entry.value === value)?.label || ARTIST_OPTIONS[0].label;
+}
+
+function getArtistNameForSelection(selection, customArtistName) {
+  if (selection === 'other') {
+    return customArtistName.trim();
+  }
+
+  return ARTIST_OPTIONS.find((entry) => entry.value === selection)?.artistName || 'Phish';
+}
 
 function createEmptyPhotoMetadata() {
   return {
@@ -245,6 +264,18 @@ function AccordionSection({ title, description, open, onToggle, children, accent
   );
 }
 
+/**
+ * @param {{
+ *   initialPhotoMetadata: Record<string, unknown>;
+ *   initialShowResult: {
+ *     show: Record<string, unknown> | null;
+ *     error: string | null;
+ *     nearbyShows: unknown[];
+ *     relatedDateShows: unknown[];
+ *   };
+ *   initialSharedPhoto?: { fileName?: string | null; receivedAt?: string | null } | null;
+ * }} props
+ */
 export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult, initialSharedPhoto = null }) {
   const [photoMetadata, setPhotoMetadata] = useState(initialPhotoMetadata);
   const [showResult, setShowResult] = useState(initialShowResult);
@@ -272,6 +303,8 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
   const [isLoadingAutocomplete, setIsLoadingAutocomplete] = useState(false);
   const [sharedImportHistory, setSharedImportHistory] = useState([]);
   const [uploaderSessionKey, setUploaderSessionKey] = useState(0);
+  const [artistSelection, setArtistSelection] = useState('phish');
+  const [customArtistName, setCustomArtistName] = useState('');
   const [showStartTime, setShowStartTime] = useState('20:00');
   const [currentSongLabel, setCurrentSongLabel] = useState('');
   const [timeContextLabel, setTimeContextLabel] = useState('');
@@ -292,6 +325,8 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
   const suggestedShow = showResult?.show ?? null;
   const nearbyShows = Array.isArray(showResult?.nearbyShows) ? showResult.nearbyShows : [];
   const relatedDateShows = Array.isArray(showResult?.relatedDateShows) ? showResult.relatedDateShows : [];
+  const selectedArtistName = getArtistNameForSelection(artistSelection, customArtistName);
+  const displayArtistName = selectedArtistName || (artistSelection === 'other' ? 'Other Artist' : 'Phish');
   const supplementalTimeValue = overrideTime || extractTimeForTimeInput(photoMetadata);
   const lookupPhotoDate = overrideDate || extractDateFromMetadata(photoMetadata) || activeDate || '';
 
@@ -359,13 +394,19 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
   };
 
   const runVenueLocationLookup = async (criteriaOverride = null) => {
+    if (artistSelection !== 'phish') {
+      setLocationSearchResults([]);
+      setLocationSearchMessage('Venue/location search currently supports Phish only.');
+      return;
+    }
+
     const venueCriteria = criteriaOverride?.venue ?? overrideVenueName;
     const cityCriteria = criteriaOverride?.city ?? overrideCity;
     const stateCriteria = criteriaOverride?.state ?? overrideState;
     const photoDateCriteria = criteriaOverride?.photoDate ?? lookupPhotoDate;
 
     setIsSearchingLocation(true);
-    setLocationSearchMessage('Searching Phish shows by venue/city/state...');
+    setLocationSearchMessage(`Searching ${displayArtistName} shows by venue/city/state...`);
 
     try {
       const result = await searchShowsByLocation({
@@ -422,6 +463,12 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
   }, []);
 
   useEffect(() => {
+    if (artistSelection !== 'phish') {
+      setAutocompleteSuggestions({ venues: [], cities: [], states: [] });
+      setIsLoadingAutocomplete(false);
+      return;
+    }
+
     if (!showSupplementalForm && hasEmbeddedGps) {
       return;
     }
@@ -471,19 +518,24 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
       isActive = false;
       window.clearTimeout(timer);
     };
-  }, [hasEmbeddedGps, overrideCity, overrideState, overrideVenueName, showSupplementalForm]);
+  }, [artistSelection, hasEmbeddedGps, overrideCity, overrideState, overrideVenueName, showSupplementalForm]);
 
   useEffect(() => {
     if (!activeDate) {
       setIsLoadingShow(false);
       return;
     }
+    if (artistSelection === 'other' && !selectedArtistName) {
+      setIsLoadingShow(false);
+      setStatusMessage('Enter an artist name to search Setlist.fm fallback matches.');
+      return;
+    }
 
     let isActive = true;
     setIsLoadingShow(true);
-    setStatusMessage('Looking up the matching Phish show...');
+    setStatusMessage(`Looking up the matching ${displayArtistName} show...`);
 
-    getShowByDate(activeDate)
+    getShowByDate(activeDate, selectedArtistName || 'Phish')
       .then((result) => {
         if (!isActive) {
           return;
@@ -497,11 +549,11 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
         const nearbyCount = Array.isArray(result?.nearbyShows) ? result.nearbyShows.length : 0;
         const relatedCount = Array.isArray(result?.relatedDateShows) ? result.relatedDateShows.length : 0;
         if (nearbyCount > 0 || relatedCount > 0) {
-          setStatusMessage('No Phish show happened on that exact date. Showing nearby and historical alternatives.');
+          setStatusMessage(`No ${displayArtistName} show happened on that exact date. Showing nearby and historical alternatives.`);
           return;
         }
 
-        setStatusMessage('No show found for that date.');
+        setStatusMessage(`No ${displayArtistName} show found for that date.`);
       })
       .catch(() => {
         if (!isActive) {
@@ -519,7 +571,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
     return () => {
       isActive = false;
     };
-  }, [activeDate]);
+  }, [activeDate, artistSelection, displayArtistName, selectedArtistName]);
 
   useEffect(() => {
     const dateFromMetadata = extractDateFromMetadata(photoMetadata);
@@ -649,6 +701,8 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
     setCalibrationMetadata(null);
     setIsMatchSectionOpen(true);
     setIsSupplementalSectionOpen(false);
+    setArtistSelection('phish');
+    setCustomArtistName('');
   };
 
   return (
@@ -715,9 +769,52 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
 
         {isLoadingShow ? (
           <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-300">
-            Looking up the matching Phish show...
+            Looking up the matching {selectedArtistName} show...
           </div>
         ) : null}
+
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-3 sm:p-4">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="text-sm text-slate-300">
+              Artist
+              <select
+                value={artistSelection}
+                onChange={(event) => {
+                  const nextSelection = event.target.value;
+                  setArtistSelection(nextSelection);
+                  if (nextSelection !== 'other') {
+                    setCustomArtistName('');
+                  }
+                }}
+                className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none ring-cyan-500/50 focus:ring"
+              >
+                {ARTIST_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            {artistSelection === 'other' ? (
+              <label className="text-sm text-slate-300">
+                Other artist name
+                <input
+                  type="text"
+                  value={customArtistName}
+                  onChange={(event) => setCustomArtistName(event.target.value)}
+                  placeholder="Pearl Jam, Dave Matthews Band, etc."
+                  className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none ring-cyan-500/50 focus:ring"
+                />
+              </label>
+            ) : (
+              <div className="rounded-xl border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-300">
+                <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Selected artist</p>
+                <p className="mt-1 text-white">{getArtistOptionLabel(artistSelection)}</p>
+              </div>
+            )}
+          </div>
+        </div>
 
         <form
           className="flex flex-col gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-3 sm:flex-row sm:items-end sm:p-4"
@@ -725,6 +822,10 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
             event.preventDefault();
             if (!showLookupDate) {
               setStatusMessage('Please select a date before searching.');
+              return;
+            }
+            if (artistSelection === 'other' && !selectedArtistName) {
+              setStatusMessage('Enter an artist name before searching Setlist.fm fallback matches.');
               return;
             }
             setActiveDate(showLookupDate);
@@ -743,7 +844,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
                   return;
                 }
                 setActiveDate(selectedDate);
-                setStatusMessage(`Looking up show for ${selectedDate}...`);
+                setStatusMessage(`Looking up ${displayArtistName} show for ${selectedDate}...`);
               }}
               className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none ring-cyan-500/50 focus:ring"
             />

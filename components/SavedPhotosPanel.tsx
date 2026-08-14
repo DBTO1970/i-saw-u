@@ -4,7 +4,7 @@ import { useMemo } from 'react';
 import Link from 'next/link';
 import LibraryPhotoDeleteButton from './LibraryPhotoDeleteButton';
 import PhotoVisibilityToggle from './PhotoVisibilityToggle';
-import { groupPhotosByYearAndShow } from '../lib/photo-grouping';
+import { groupPhotosByYearAndShow, parseRawExif } from '../lib/photo-grouping';
 import { deriveCurrentSongLabelFromShowMetadata, normalizeTimeContextLabel } from '../lib/photo-show-context';
 import { useSortedList } from '../lib/useSortedList';
 
@@ -14,6 +14,15 @@ type MappedPhoto = SavedPhoto & {
   dateSaved: string | null;
   currentSong: string | null;
   timeContextLabel: string | null;
+};
+
+type SavedPhotoGroup = {
+  key: string;
+  showDate: string | null;
+  label: string;
+  venueName: string | null;
+  location: string | null;
+  photos: Array<Record<string, unknown>>;
 };
 
 type SavedPhotosPanelProps = {
@@ -68,6 +77,17 @@ export default function SavedPhotosPanel({ photos, photosError }: SavedPhotosPan
   );
 
   const defaultSavedPhotosYear = groupedSavedPhotos[0]?.year || null;
+
+  function getArtistNameForGroup(group: SavedPhotoGroup) {
+    const firstPhoto = group?.photos?.[0];
+    const rawExif = firstPhoto ? parseRawExif((firstPhoto as Record<string, unknown>).raw_exif) : {};
+    const showMetadata = rawExif?.showMetadata && typeof rawExif.showMetadata === 'object' ? rawExif.showMetadata : {};
+    return (
+      (showMetadata.artistName as string | undefined)
+      || (showMetadata.artist_name as string | undefined)
+      || 'Show'
+    );
+  }
 
   if (photosError) {
     return (
@@ -140,7 +160,7 @@ export default function SavedPhotosPanel({ photos, photosError }: SavedPhotosPan
         {SortControlComponent}
       </div>
 
-      {groupedSavedPhotos.map((yearGroup: { year: string; groups: { key: string; showDate: string | null; label: string; venueName: string | null; location: string | null; photos: Record<string, unknown>[] }[] }) => (
+      {groupedSavedPhotos.map((yearGroup: { year: string; groups: SavedPhotoGroup[] }) => (
         <details key={yearGroup.year} open={yearGroup.year === defaultSavedPhotosYear} className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-950/60">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-left">
             <div>
@@ -153,7 +173,7 @@ export default function SavedPhotosPanel({ photos, photosError }: SavedPhotosPan
               <div key={`${yearGroup.year}-${group.key}`} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
                 <div className="mb-3 flex items-center justify-between gap-2">
                   <div>
-                    <p className="text-sm font-semibold text-white">{group.label}</p>
+                    <p className="text-sm font-semibold text-white">{getArtistNameForGroup(group)} · {group.label}</p>
                     {group.showDate ? (
                       <p className="text-xs text-slate-400">
                         {group.venueName || 'Unknown venue'}

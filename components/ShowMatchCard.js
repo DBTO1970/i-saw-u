@@ -177,7 +177,7 @@ function inferBreakDurationMs(previousSetTitle, nextSetTitle) {
   return 35 * 60 * 1000;
 }
 
-function buildSongTimeline(entries, showStart) {
+function buildSongTimeline(entries, showStart, options = {}) {
   const normalizedEntries = entries.filter((entry) => entry.type && entry.label);
   if (!normalizedEntries.length) {
     return { segments: [], durationCoverage: 0 };
@@ -190,7 +190,10 @@ function buildSongTimeline(entries, showStart) {
 
   const songsWithDuration = songEntries.filter((entry) => typeof entry.durationSeconds === 'number' && entry.durationSeconds > 0).length;
   const durationCoverage = songsWithDuration / songEntries.length;
-  const fallbackDurationMs = 8 * 60 * 1000;
+  const fallbackDurationSeconds = Number.isFinite(options.fallbackSongDurationSeconds) && options.fallbackSongDurationSeconds > 0
+    ? options.fallbackSongDurationSeconds
+    : 8 * 60;
+  const fallbackDurationMs = fallbackDurationSeconds * 1000;
   const betweenSongsMs = 20 * 1000;
   const segments = [];
   let cursor = new Date(showStart.getTime());
@@ -338,7 +341,7 @@ function contextLabelToSnapValue(contextLabel) {
   return '';
 }
 
-function inferTimeContext(photoMetadata, show, setlistEntries, startTimeString = '20:00') {
+function inferTimeContext(photoMetadata, show, setlistEntries, startTimeString = '20:00', options = {}) {
   const normalizedStartTimeString = typeof startTimeString === 'string' && startTimeString ? startTimeString : '20:00';
   const photoDateTime = parsePhotoDateTime(photoMetadata);
   const showDate = parseShowDate(show);
@@ -369,12 +372,15 @@ function inferTimeContext(photoMetadata, show, setlistEntries, startTimeString =
   }
 
   const showStart = new Date(`${show.date}T${normalizedStartTimeString}:00`);
-  const { segments, durationCoverage } = buildSongTimeline(setlistEntries, showStart);
+  const { segments, durationCoverage } = buildSongTimeline(setlistEntries, showStart, options);
   const showEnd = segments.length > 0
     ? new Date(segments[segments.length - 1].end.getTime())
     : new Date(`${show.date}T23:30:00`);
 
   const calculateConfidenceAndColor = (hasExactSongMatch) => {
+    if (options.estimatedMatch) {
+      return { confidence: 'estimated_match', color: 'yellow' };
+    }
     if (hasExactSongMatch && durationCoverage >= 0.8) {
       return { confidence: 'high', color: 'green' };
     }
@@ -388,7 +394,7 @@ function inferTimeContext(photoMetadata, show, setlistEntries, startTimeString =
     return {
       phase: 'pre',
       label: 'Pre-show',
-      confidence: 'medium',
+      confidence: options.estimatedMatch ? 'estimated_match' : 'medium',
       color: 'yellow',
       songContext: null,
     };
@@ -398,7 +404,7 @@ function inferTimeContext(photoMetadata, show, setlistEntries, startTimeString =
     return {
       phase: 'post',
       label: 'Post-show',
-      confidence: 'medium',
+      confidence: options.estimatedMatch ? 'estimated_match' : 'medium',
       color: 'yellow',
       songContext: null,
     };
@@ -631,6 +637,13 @@ export default function ShowMatchCard({
 
   const startTimeFormatted = useMemo(() => formatMinutesToTime(startMinutes), [startMinutes]);
   const startTime24h = useMemo(() => formatMinutesTo24h(startMinutes), [startMinutes]);
+  const artistName = show?.artistName || 'Show';
+  const isPhishShow = String(show?.provider || '').toLowerCase() === 'phishnet'
+    || String(show?.artistName || '').toLowerCase() === 'phish';
+  const isEstimatedMatch = Boolean(show?.providerTier === 'tier2_fallback' || show?.matchConfidence === 'estimated_match' || show?.setlistEstimated);
+  const estimatedSongDurationSeconds = isEstimatedMatch
+    ? Number(show?.estimatedSongDurationSeconds) || 300
+    : undefined;
 
   // Use refs so the effects only re-fire when values change, not when callback
   // references change (which would cause an infinite render loop in callers).
@@ -655,10 +668,19 @@ export default function ShowMatchCard({
 
   const setlistEntries = useMemo(() => formatSetlist(show?.setlist), [show]);
   const photoTimestamp = useMemo(() => parsePhotoDateTime(photoMetadata), [photoMetadata]);
-  const setlistSongTimeline = useMemo(() => buildSetlistSongTimeline(setlistEntries), [setlistEntries]);
+  const setlistSongTimeline = useMemo(
+    () => buildSetlistSongTimeline(setlistEntries, {
+      fallbackSongDurationSeconds: estimatedSongDurationSeconds,
+    }),
+    [estimatedSongDurationSeconds, setlistEntries]
+  );
   const defaultCalibration = useMemo(
-    () => calibrateShowStartTime(photoTimestamp, setlistEntries, { expectedShowStartTime: showStartTime }),
-    [photoTimestamp, setlistEntries, showStartTime]
+    () => calibrateShowStartTime(photoTimestamp, setlistEntries, {
+      expectedShowStartTime: showStartTime,
+      fallbackSongDurationSeconds: estimatedSongDurationSeconds,
+      estimatedMatch: isEstimatedMatch,
+    }),
+    [estimatedSongDurationSeconds, isEstimatedMatch, photoTimestamp, setlistEntries, showStartTime]
   );
   const dateSource = photoMetadata?.dateSource || 'unknown';
   const timeSource = photoMetadata?.timeSource || dateSource || 'unknown';
@@ -668,8 +690,11 @@ export default function ShowMatchCard({
   const gpsConfidence = sourceConfidence(gpsSource);
 
   const timeContext = useMemo(
-    () => inferTimeContext(photoMetadata, show, setlistEntries, startTime24h),
-    [photoMetadata, show, setlistEntries, startTime24h]
+    () => inferTimeContext(photoMetadata, show, setlistEntries, startTime24h, {
+      fallbackSongDurationSeconds: estimatedSongDurationSeconds,
+      estimatedMatch: isEstimatedMatch,
+    }),
+    [estimatedSongDurationSeconds, isEstimatedMatch, photoMetadata, show, setlistEntries, startTime24h]
   );
   const initialContextOverride = useMemo(
     () => buildManualTimeContextOverride(
@@ -785,7 +810,7 @@ export default function ShowMatchCard({
   const phishInAudioMessage = useMemo(() => renderPhishInAudioMessage(phishInLinks), [phishInLinks]);
 
   useEffect(() => {
-    if (!show?.date) {
+    if (!show?.date || !isPhishShow) {
       setPhishInLinks({
         showUrl: null,
         songUrl: null,
@@ -835,7 +860,7 @@ export default function ShowMatchCard({
     return () => {
       isActive = false;
     };
-  }, [show?.date, effectiveTimeContext?.songLabel]);
+  }, [effectiveTimeContext?.songLabel, isPhishShow, show?.date]);
 
   const applyAutoCalibration = () => {
     if (!defaultCalibration) {
@@ -913,6 +938,8 @@ export default function ShowMatchCard({
     const snapResult = calibrateShowStartTime(photoTimestamp, setlistEntries, {
       targetSongIndex: nextSongIndex,
       roundToMinutes: 1,
+      fallbackSongDurationSeconds: estimatedSongDurationSeconds,
+      estimatedMatch: isEstimatedMatch,
     });
 
     if (!snapResult) {
@@ -970,7 +997,8 @@ export default function ShowMatchCard({
             </div>
           )}
 
-          <h2 className="mt-2 text-xl font-semibold text-white sm:text-2xl">{show?.venueName || 'Unknown venue'}</h2>
+          <p className="mt-2 text-xs font-semibold uppercase tracking-[0.24em] text-cyan-400">{artistName}</p>
+          <h2 className="mt-1 text-xl font-semibold text-white sm:text-2xl">{show?.venueName || 'Unknown venue'}</h2>
           <p className="mt-1 text-sm text-slate-400">
             {show?.city || 'Unknown city'}, {show?.state || 'Unknown state'} • {formatDate(show?.date)}
           </p>
@@ -1006,7 +1034,9 @@ export default function ShowMatchCard({
             ) : null}
             {defaultCalibration ? (
               <p className="mt-1 text-xs text-slate-500">
-                Confidence: {defaultCalibration.confidence || 'medium'}{typeof defaultCalibration.clockDriftMinutes === 'number' && defaultCalibration.clockDriftMinutes !== 0 ? `, clock drift ${defaultCalibration.clockDriftMinutes > 0 ? '+' : ''}${defaultCalibration.clockDriftMinutes} min` : ''}
+                Confidence: {defaultCalibration.confidence || 'medium'}
+                {defaultCalibration.confidence === 'estimated_match' ? ' (fallback durations)' : ''}
+                {typeof defaultCalibration.clockDriftMinutes === 'number' && defaultCalibration.clockDriftMinutes !== 0 ? `, clock drift ${defaultCalibration.clockDriftMinutes > 0 ? '+' : ''}${defaultCalibration.clockDriftMinutes} min` : ''}
               </p>
             ) : null}
 
@@ -1103,25 +1133,31 @@ export default function ShowMatchCard({
                 Open this show on phish.net
               </a>
             ) : null}
-            {phishInLinks.loading ? <span className="text-slate-400">Loading Phish.in links...</span> : null}
-            {!phishInLinks.loading && !phishInLinks.error && !phishInLinks.showUrl ? (
-              <span className="text-amber-300">No phish.in show page was found for this date.</span>
-            ) : null}
-            {phishInLinks.showUrl ? (
-              <a href={phishInLinks.showUrl} target="_blank" rel="noreferrer" className="underline hover:text-cyan-200">
-                Open this show on phish.in
-              </a>
-            ) : null}
-            {effectiveTimeContext?.songLabel && phishInLinks.songUrl ? (
-              <a href={phishInLinks.songUrl} target="_blank" rel="noreferrer" className="underline hover:text-cyan-200">
-                Open estimated song on phish.in ({phishInLinks.songTitle || effectiveTimeContext.songLabel})
-              </a>
-            ) : null}
-            {!phishInLinks.loading && !phishInLinks.error && effectiveTimeContext?.songLabel && phishInLinks.showUrl && !phishInLinks.songUrl ? (
-              <span className="text-slate-400">A matching track link was not found for the estimated song on phish.in.</span>
-            ) : null}
-            {phishInAudioMessage ? <span className="text-amber-300">{phishInAudioMessage}</span> : null}
-            {phishInLinks.error ? <span className="text-amber-300">{phishInLinks.error}</span> : null}
+            {isPhishShow ? (
+              <>
+                {phishInLinks.loading ? <span className="text-slate-400">Loading Phish.in links...</span> : null}
+                {!phishInLinks.loading && !phishInLinks.error && !phishInLinks.showUrl ? (
+                  <span className="text-amber-300">No phish.in show page was found for this date.</span>
+                ) : null}
+                {phishInLinks.showUrl ? (
+                  <a href={phishInLinks.showUrl} target="_blank" rel="noreferrer" className="underline hover:text-cyan-200">
+                    Open this show on phish.in
+                  </a>
+                ) : null}
+                {effectiveTimeContext?.songLabel && phishInLinks.songUrl ? (
+                  <a href={phishInLinks.songUrl} target="_blank" rel="noreferrer" className="underline hover:text-cyan-200">
+                    Open estimated song on phish.in ({phishInLinks.songTitle || effectiveTimeContext.songLabel})
+                  </a>
+                ) : null}
+                {!phishInLinks.loading && !phishInLinks.error && effectiveTimeContext?.songLabel && phishInLinks.showUrl && !phishInLinks.songUrl ? (
+                  <span className="text-slate-400">A matching track link was not found for the estimated song on phish.in.</span>
+                ) : null}
+                {phishInAudioMessage ? <span className="text-amber-300">{phishInAudioMessage}</span> : null}
+                {phishInLinks.error ? <span className="text-amber-300">{phishInLinks.error}</span> : null}
+              </>
+            ) : (
+              <span className="text-slate-400">Phish.in links are only available for Phish shows.</span>
+            )}
           </div>
         </div>
         {locationVerified ? (

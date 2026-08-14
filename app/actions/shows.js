@@ -1,5 +1,10 @@
 'use server';
 
+import {
+  getNormalizedShowByArtistAndDate,
+  normalizeProviderShowToLegacyShow,
+} from '../../lib/setlists/unified-provider-service';
+
 const NO_SHOW_RESULT = {
   show: null,
   error: 'No show found for the requested date.',
@@ -389,24 +394,36 @@ async function fetchShowRecordByDate(dateString, apiKey) {
   return selectShowRecord(showRows);
 }
 
-async function fetchPrimaryShow(dateString, apiKey) {
-  const setlistsUrl = `https://api.phish.net/v5/setlists/showdate/${dateString}.json?apikey=${apiKey}`;
-  const [showRecord, setlistsPayload] = await Promise.all([
-    fetchShowRecordByDate(dateString, apiKey),
-    fetchJson(setlistsUrl),
-  ]);
-
-  if (!showRecord) {
+async function fetchPrimaryShow(dateString, apiKey, artistName = 'Phish') {
+  const normalizedShow = await getNormalizedShowByArtistAndDate({
+    artistName,
+    showDate: dateString,
+    phishNetApiKey: apiKey,
+    setlistFmApiKey: process.env.SETLISTFM_API_KEY,
+  });
+  if (!normalizedShow) {
     return null;
   }
 
-  const setlistRows = getDataRows(setlistsPayload);
-  const parsedSetlist = buildSetlistEntries(setlistRows, showRecord.showid);
-  const rawLatitude = extractCoordinate(showRecord.latitude || showRecord.lat || showRecord.venue_latitude || showRecord.venueLatitude || showRecord.venue_lat);
-  const rawLongitude = extractCoordinate(showRecord.longitude || showRecord.lon || showRecord.venue_longitude || showRecord.venueLongitude || showRecord.venue_lon);
-  const geocodedVenue = rawLatitude === null || rawLongitude === null ? await geocodeVenue(showRecord) : { latitude: rawLatitude, longitude: rawLongitude };
+  const legacyShow = normalizeProviderShowToLegacyShow(normalizedShow);
+  const geocodedVenue = await geocodeVenue({
+    venue: legacyShow.venueName,
+    city: legacyShow.city,
+    state: legacyShow.state,
+  });
+  const isEstimatedMatch = normalizedShow.tier === 'tier2_fallback';
 
-  return buildShowFromRecord(showRecord, dateString, parsedSetlist, geocodedVenue);
+  return {
+    ...legacyShow,
+    latitude: geocodedVenue.latitude ?? null,
+    longitude: geocodedVenue.longitude ?? null,
+    provider: normalizedShow.provider,
+    artistName: normalizedShow.artistName,
+    providerTier: normalizedShow.tier,
+    setlistEstimated: isEstimatedMatch,
+    estimatedSongDurationSeconds: isEstimatedMatch ? 300 : null,
+    matchConfidence: isEstimatedMatch ? 'estimated_match' : 'high',
+  };
 }
 
 async function fetchShowSummaryByDate(dateString, apiKey) {
@@ -1047,7 +1064,7 @@ export async function searchLocationAutocomplete(criteria) {
   }
 }
 
-export async function getShowByDate(dateString) {
+export async function getShowByDate(dateString, artistName = 'Phish') {
   if (!isValidDateString(dateString)) {
     return {
       ...NO_SHOW_RESULT,
@@ -1055,22 +1072,23 @@ export async function getShowByDate(dateString) {
     };
   }
 
-  const apiKey = process.env.PHISHNET_API_KEY;
-  if (!apiKey) {
-    return {
-      ...NO_SHOW_RESULT,
-      error: 'The PHISHNET_API_KEY environment variable is not configured.',
-    };
-  }
+  const phishNetApiKey = process.env.PHISHNET_API_KEY;
 
   try {
-    const primaryShow = await fetchPrimaryShow(dateString, apiKey);
+    const primaryShow = await fetchPrimaryShow(dateString, phishNetApiKey, artistName);
     if (primaryShow) {
       return {
         show: primaryShow,
         error: null,
         nearbyShows: [],
         relatedDateShows: [],
+      };
+    }
+
+    if (String(artistName).trim().toLowerCase() !== 'phish') {
+      return {
+        ...NO_SHOW_RESULT,
+        error: 'No show found for the requested date.',
       };
     }
 

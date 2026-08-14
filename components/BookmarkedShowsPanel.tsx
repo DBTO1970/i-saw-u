@@ -49,6 +49,9 @@ export default function BookmarkedShowsPanel({ shows, showsError }: BookmarkedSh
 
   const renderShowCard = (show: MappedShow) => {
     const showData = show.show_data as Record<string, unknown> | null;
+    const artistName = (showData?.artistName as string | undefined)
+      || (showData?.artist_name as string | undefined)
+      || 'Show';
     const phishNetUrl =
       showData?.phishNetUrl ||
       (show.show_date
@@ -59,7 +62,7 @@ export default function BookmarkedShowsPanel({ shows, showsError }: BookmarkedSh
         <Link href={`/library/show/${show.show_date as string}`} className="block p-5">
           <div className="flex items-start justify-between gap-3">
             <div>
-              <span className="text-xs font-bold text-cyan-400">{show.show_date as string}</span>
+              <span className="text-xs font-bold text-cyan-400">{artistName} · {show.show_date as string}</span>
               <h3 className="mt-0.5 text-lg font-semibold text-white">{(show.venue_name as string) || 'Venue Unknown'}</h3>
               <p className="text-xs text-slate-400">{(show.location as string) || ''}</p>
             </div>

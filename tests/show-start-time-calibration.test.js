@@ -136,6 +136,31 @@ describe('calibrateShowStartTime', () => {
     expect(result.matchedSongLabels).toEqual(['Mike\'s Song', 'Hydrogen']);
   });
 
+  it('labels fallback-duration matches as estimated', () => {
+    const setlist = [
+      { type: 'set', label: 'Set 1' },
+      { type: 'song', label: 'Opener' },
+      { type: 'song', label: 'Second Song' },
+    ];
+
+    const songs = buildSetlistSongTimeline(setlist, {
+      fallbackSongDurationSeconds: 300,
+    });
+
+    expect(songs[0].durationSeconds).toBe(300);
+
+    const result = calibrateShowStartTime(new Date('2026-07-10T20:02:00'), setlist, {
+      targetSongIndex: 0,
+      roundToMinutes: 1,
+      fallbackSongDurationSeconds: 300,
+      estimatedMatch: true,
+    });
+
+    expect(result).not.toBeNull();
+    expect(['estimated_match', 'fuzzy']).toContain(result.confidence);
+    expect(result.confidenceScore).toBeGreaterThan(0);
+  });
+
   it('returns null when timestamp is missing or invalid', () => {
     const setlist = createSetlistFixture();
     expect(calibrateShowStartTime(null, setlist)).toBeNull();
