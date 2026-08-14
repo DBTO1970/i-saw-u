@@ -1,5 +1,6 @@
 import './globals.css';
 import { Analytics } from "@vercel/analytics/next"
+import { SpeedInsights } from "@vercel/speed-insights/next"
 
 export const metadata = {
   title: 'I Saw U',
@@ -18,6 +19,7 @@ export default function RootLayout({ children }) {
       <body className="min-h-screen bg-slate-950 text-slate-100">
         {children}
         <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );
