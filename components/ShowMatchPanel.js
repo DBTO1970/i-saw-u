@@ -126,9 +126,9 @@ const SHARED_IMPORT_HISTORY_KEY = 'sharedImportHistoryV1';
 const ARTIST_OPTIONS = [
   { value: 'phish', label: 'Phish', artistName: 'Phish' },
   { value: 'dead', label: 'Grateful Dead / Dead & Co', artistName: 'Grateful Dead / Dead & Co' },
+  { value: 'kglw', label: 'King Gizzard & the Lizard Wizard', artistName: 'King Gizzard & the Lizard Wizard' },
   { value: 'billy', label: 'Billy Strings', artistName: 'Billy Strings' },
-  { value: 'goose', label: 'Goose', artistName: 'Goose' },
-  { value: 'kglw', label: '🦎 King Gizzard & the Lizard Wizard', artistName: 'King Gizzard & the Lizard Wizard' },
+  { value: 'goose', label: 'Goose', artistName: 'Goose' }, 
   { value: 'other', label: 'Other artists (Powered by Setlist.fm)', artistName: '' },
 ];
 
