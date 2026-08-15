@@ -6,7 +6,11 @@ i-saw-u is a Next.js web app for exploring concert and event photos by matching 
 
 - Upload an image and preview it in the browser
 - Extract EXIF metadata such as capture date, latitude, and longitude
-- Match the photo date to a show from multi-provider setlist sources (Phish.net, ElGoose, KGLW.net, Relisten, Setlist.fm fallback)
+<<<<<<< HEAD
+- Match the photo date to a show from multi-provider setlist sources (Phish.net, KGLW.net, ElGoose, Relisten, Setlist.fm fallback)
+=======
+- Match the photo date to a show from multi-provider setlist sources (Phish.net, KGLW.net, ElGoose, Relisten, Setlist.fm fallback)
+>>>>>>> agents/5e6790ac-e824-4f12-bef0-787ba58397e8
 - Display related show information, links, and metadata when available
 - Let signed-in users save photos and matches to a personal library
 
@@ -33,7 +37,7 @@ i-saw-u is a Next.js web app for exploring concert and event photos by matching 
 
 ### Prerequisites
 
-- Node.js 18 or newer
+- Node.js 22 or newer
 - npm
 - A Supabase project with the required environment variables
 
@@ -64,6 +68,8 @@ i-saw-u is a Next.js web app for exploring concert and event photos by matching 
    SETLISTFM_API_KEY=your-setlistfm-api-key
    RELISTEN_API_BASE_URL=https://relisten.net/api/v1
    ```
+
+   KGLW.net lookups use the public API and do not require an API key.
 
 5. Run the development server:
    ```bash

@@ -13,6 +13,8 @@ import ShowSetlistPhotos from '../../../../components/ShowSetlistPhotos';
 import ShowBookmarkButton from '../../../../components/ShowBookmarkButton';
 import { deriveCurrentSongLabelFromShowMetadata, normalizeTimeContextLabel } from '../../../../lib/photo-show-context';
 
+export const dynamic = 'force-dynamic';
+
 function isValidDate(d) {
   return /^\d{4}-\d{2}-\d{2}$/.test(d);
 }
@@ -49,6 +51,18 @@ export default async function ShowDetailPage({ params }) {
 
   if (!isValidDate(showDate)) {
     redirect('/library');
+  }
+
+  if (process.env.NEXT_PHASE === 'phase-production-build') {
+    return (
+      <div className="min-h-screen bg-slate-950 text-white">
+        <div className="mx-auto max-w-5xl px-4 py-8">
+          <div className="rounded-2xl border border-slate-700 bg-slate-900/70 p-6 text-sm text-slate-300">
+            Loading show details...
+          </div>
+        </div>
+      </div>
+    );
   }
 
   const supabase = createClient();
