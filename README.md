@@ -98,4 +98,4 @@ This project is licensed under a **Business Source License (BSL)**.
 * **Commercial Use**: Prohibited. You may not host this as a paid service, use it for commercial events, or integrate it into a commercial product without a separate license.
 * **Open Source Transition**: On **August 15, 2029**, this project will automatically and permanently convert to the standard open-source **MIT License**.
 
-For commercial licensing requests or inquiries, please contact the repository owner. See the full [LICENSE](LICENSE) file for exact legal terms.
+For commercial licensing requests or inquiries, please contact the repository owner. See the full [LICENSE](LICENSE.md) file for exact legal terms.
