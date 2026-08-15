@@ -11,7 +11,12 @@ type ProviderFetchInput = {
   setlistFmApiKey?: string;
 };
 
+type ShowRow = Database['public']['Tables']['shows']['Row'];
+type ShowInsert = Database['public']['Tables']['shows']['Insert'];
+type SetlistRow = Database['public']['Tables']['setlists']['Row'];
+type SetlistInsert = Database['public']['Tables']['setlists']['Insert'];
 type SongRow = Database['public']['Tables']['songs']['Row'];
+type SongInsert = Database['public']['Tables']['songs']['Insert'];
 type SetType = Database['public']['Enums']['set_type'];
 
 const KGLW_ARTIST_KEYS = new Set([
@@ -61,12 +66,13 @@ async function getCachedKglwShowByDate(showDate: string): Promise<NormalizedShow
     return null;
   }
 
-  const { data: showRow, error: showError } = await supabase
+  const { data: rawShowRow, error: showError } = await supabase
     .from('shows')
     .select('id, artist_name, provider, external_show_id, show_date, venue_name, city, state, country, created_at, updated_at')
     .eq('provider', 'kglw')
     .eq('show_date', showDate)
     .maybeSingle();
+  const showRow = rawShowRow as ShowRow | null;
 
   if (showError) {
     console.error('Failed to read cached KGLW show:', showError);
@@ -77,25 +83,27 @@ async function getCachedKglwShowByDate(showDate: string): Promise<NormalizedShow
     return null;
   }
 
-  const { data: setlistRows, error: setlistError } = await supabase
+  const { data: rawSetlistRows, error: setlistError } = await supabase
     .from('setlists')
     .select('id, show_id, set_name, set_type, position, created_at')
     .eq('show_id', showRow.id)
     .order('position', { ascending: true });
+  const setlistRows = (rawSetlistRows ?? []) as SetlistRow[];
 
   if (setlistError) {
     console.error('Failed to read cached KGLW setlists:', setlistError);
     return null;
   }
 
-  const setlistIds = (setlistRows ?? []).map((row) => row.id);
-  const { data: songRows, error: songError } = setlistIds.length
+  const setlistIds = setlistRows.map((row) => row.id);
+  const { data: rawSongRows, error: songError } = setlistIds.length
     ? await supabase
       .from('songs')
       .select('id, setlist_id, title, position, duration_seconds, notes, created_at')
       .in('setlist_id', setlistIds)
       .order('position', { ascending: true })
     : { data: [], error: null };
+  const songRows = (rawSongRows ?? []) as SongRow[];
 
   if (songError) {
     console.error('Failed to read cached KGLW songs:', songError);
@@ -103,7 +111,7 @@ async function getCachedKglwShowByDate(showDate: string): Promise<NormalizedShow
   }
 
   const songsBySetlistId = new Map<string, SongRow[]>();
-  (songRows ?? []).forEach((songRow) => {
+  songRows.forEach((songRow) => {
     const songs = songsBySetlistId.get(songRow.setlist_id) ?? [];
     songs.push(songRow);
     songsBySetlistId.set(songRow.setlist_id, songs);
@@ -119,7 +127,7 @@ async function getCachedKglwShowByDate(showDate: string): Promise<NormalizedShow
     state: showRow.state ?? undefined,
     country: showRow.country ?? 'US',
     tier: 'tier1_exact',
-    sets: (setlistRows ?? []).map((setRow) => ({
+    sets: setlistRows.map((setRow) => ({
       setName: setRow.set_name,
       songs: (songsBySetlistId.get(setRow.id) ?? []).map((songRow) => ({
         title: songRow.title,
@@ -141,22 +149,25 @@ async function cacheKglwShow(show: NormalizedShow): Promise<void> {
     return;
   }
 
-  const { data: showRow, error: showError } = await supabase
+  const showPayload: ShowInsert = {
+    artist_name: show.artistName,
+    provider: show.provider,
+    external_show_id: show.externalId,
+    show_date: show.showDate,
+    venue_name: show.venueName || null,
+    city: show.city || null,
+    state: show.state || null,
+    country: show.country || null,
+  };
+
+  const { data: rawShowRow, error: showError } = await supabase
     .from('shows')
-    .upsert({
-      artist_name: show.artistName,
-      provider: show.provider,
-      external_show_id: show.externalId,
-      show_date: show.showDate,
-      venue_name: show.venueName || null,
-      city: show.city || null,
-      state: show.state || null,
-      country: show.country || null,
-    }, {
+    .upsert([showPayload] as never, {
       onConflict: 'provider,external_show_id',
     })
     .select('id, artist_name, provider, external_show_id, show_date, venue_name, city, state, country, created_at, updated_at')
     .single();
+  const showRow = rawShowRow as ShowRow | null;
 
   if (showError || !showRow) {
     console.error('Failed to cache KGLW show:', showError);
@@ -177,15 +188,18 @@ async function cacheKglwShow(show: NormalizedShow): Promise<void> {
     return;
   }
 
-  const { data: insertedSetlists, error: setlistError } = await supabase
+  const setlistPayload: SetlistInsert[] = show.sets.map((set, index) => ({
+    show_id: showRow.id,
+    set_name: set.setName,
+    set_type: inferSetType(set.setName, index),
+    position: index + 1,
+  }));
+
+  const { data: rawInsertedSetlists, error: setlistError } = await supabase
     .from('setlists')
-    .insert(show.sets.map((set, index) => ({
-      show_id: showRow.id,
-      set_name: set.setName,
-      set_type: inferSetType(set.setName, index),
-      position: index + 1,
-    })))
+    .insert(setlistPayload as never)
     .select('id, show_id, set_name, set_type, position, created_at');
+  const insertedSetlists = (rawInsertedSetlists ?? []) as SetlistRow[];
 
   if (setlistError) {
     console.error('Failed to cache KGLW setlists:', setlistError);
@@ -193,11 +207,11 @@ async function cacheKglwShow(show: NormalizedShow): Promise<void> {
   }
 
   const setlistIdByPosition = new Map<number, string>();
-  (insertedSetlists ?? []).forEach((setlistRow) => {
+  insertedSetlists.forEach((setlistRow) => {
     setlistIdByPosition.set(setlistRow.position, setlistRow.id);
   });
 
-  const songRows = show.sets.flatMap((set, setIndex) => {
+  const songRows: SongInsert[] = show.sets.flatMap((set, setIndex) => {
     const setlistId = setlistIdByPosition.get(setIndex + 1);
     if (!setlistId) {
       return [];
@@ -218,7 +232,7 @@ async function cacheKglwShow(show: NormalizedShow): Promise<void> {
 
   const { error: songError } = await supabase
     .from('songs')
-    .insert(songRows);
+    .insert(songRows as never);
 
   if (songError) {
     console.error('Failed to cache KGLW songs:', songError);
