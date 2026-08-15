@@ -30,12 +30,19 @@ type LegacyShow = {
   artistName: string;
 };
 
-const RELISTEN_ARTIST_SLUGS: Record<string, string> = {
-  'grateful dead': 'grateful-dead',
-  goose: 'goose',
-  'dead and company': 'dead-and-company',
-  'tedeschi trucks band': 'tedeschi-trucks-band',
-  'widespread panic': 'widespread-panic',
+const RELISTEN_ARTIST_SLUGS: Record<string, string[]> = {
+  'grateful dead': ['grateful-dead'],
+  goose: ['goose'],
+  'dead and company': ['dead-and-company'],
+  'dead and co': ['dead-and-company'],
+  'dead & company': ['dead-and-company'],
+  'dead & co': ['dead-and-company'],
+  'grateful dead / dead and company': ['grateful-dead', 'dead-and-company'],
+  'grateful dead / dead and co': ['grateful-dead', 'dead-and-company'],
+  'grateful dead / dead & company': ['grateful-dead', 'dead-and-company'],
+  'grateful dead / dead & co': ['grateful-dead', 'dead-and-company'],
+  'tedeschi trucks band': ['tedeschi-trucks-band'],
+  'widespread panic': ['widespread-panic'],
 };
 
 const KGLW_ARTIST_ALIASES = new Set([
@@ -51,6 +58,27 @@ function normalizeText(value: unknown): string {
 
 function toArtistKey(artistName: string): string {
   return normalizeText(artistName).toLowerCase();
+}
+
+function getRelistenSlugsForArtist(artistKey: string): string[] {
+  const exact = RELISTEN_ARTIST_SLUGS[artistKey];
+  if (exact) {
+    return exact;
+  }
+
+  if (artistKey.includes('grateful dead') && (artistKey.includes('dead & co') || artistKey.includes('dead and co') || artistKey.includes('dead & company') || artistKey.includes('dead and company'))) {
+    return ['grateful-dead', 'dead-and-company'];
+  }
+
+  if (artistKey.includes('dead & co') || artistKey.includes('dead and co') || artistKey.includes('dead & company') || artistKey.includes('dead and company')) {
+    return ['dead-and-company'];
+  }
+
+  if (artistKey.includes('grateful dead')) {
+    return ['grateful-dead'];
+  }
+
+  return [];
 }
 
 function isValidDateString(value: string): boolean {
@@ -546,8 +574,8 @@ export async function getNormalizedShowByArtistAndDate(input: ProviderFetchInput
     return fetchFromKglw(input);
   }
 
-  const relistenSlug = RELISTEN_ARTIST_SLUGS[artistKey];
-  if (relistenSlug) {
+  const relistenSlugs = getRelistenSlugsForArtist(artistKey);
+  for (const relistenSlug of relistenSlugs) {
     const relisten = await fetchFromRelisten(input, relistenSlug);
     if (relisten) {
       return relisten;
