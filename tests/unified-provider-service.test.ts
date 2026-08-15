@@ -123,3 +123,59 @@ describe('KGLW provider lookups', () => {
     ]);
   });
 });
+
+describe('Relisten artist alias resolution', () => {
+  it('tries both Relisten slugs for the combined Dead selector label', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === 'https://relisten.net/api/v1/shows/grateful-dead/2026-08-14') {
+        return {
+          ok: false,
+          status: 404,
+          json: async () => ({}),
+        } as Response;
+      }
+
+      if (url === 'https://relisten.net/api/v1/shows/dead-and-company/2026-08-14') {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            id: 'dandc-2026-08-14',
+            date: '2026-08-14',
+            artist: 'Dead & Company',
+            venue: 'Meadow Creek',
+            city: 'Buena Vista',
+            state: 'CO',
+            country: 'US',
+            sets: [
+              {
+                set: 'Set 1',
+                songs: [
+                  { title: 'Bertha', duration: '08:00' },
+                ],
+              },
+            ],
+          }),
+        } as Response;
+      }
+
+      throw new Error(`Unexpected fetch URL: ${url}`);
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    const normalizedShow = await getNormalizedShowByArtistAndDate({
+      artistName: 'Grateful Dead / Dead & Co',
+      showDate: '2026-08-14',
+    });
+
+    expect(normalizedShow).not.toBeNull();
+    expect(normalizedShow?.provider).toBe('relisten');
+    expect(normalizedShow?.artistName).toBe('Dead & Company');
+    expect(normalizedShow?.sets[0]?.songs[0]?.title).toBe('Bertha');
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      'https://relisten.net/api/v1/shows/grateful-dead/2026-08-14',
+      'https://relisten.net/api/v1/shows/dead-and-company/2026-08-14',
+    ]);
+  });
+});
