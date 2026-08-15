@@ -12,6 +12,7 @@ type ProviderFetchInput = {
 };
 
 type ShowRow = Database['public']['Tables']['shows']['Row'];
+type ShowIdRow = Pick<ShowRow, 'id'>;
 type ShowInsert = Database['public']['Tables']['shows']['Insert'];
 type SetlistRow = Database['public']['Tables']['setlists']['Row'];
 type SetlistInsert = Database['public']['Tables']['setlists']['Insert'];
@@ -68,7 +69,7 @@ async function getCachedKglwShowByDate(showDate: string): Promise<NormalizedShow
 
   const { data: rawShowRow, error: showError } = await supabase
     .from('shows')
-    .select('id, artist_name, provider, external_show_id, show_date, venue_name, city, state, country, created_at, updated_at')
+    .select('id, artist_name, external_show_id, show_date, venue_name, city, state, country')
     .eq('provider', 'kglw')
     .eq('show_date', showDate)
     .maybeSingle();
@@ -165,9 +166,9 @@ async function cacheKglwShow(show: NormalizedShow): Promise<void> {
     .upsert([showPayload] as never, {
       onConflict: 'provider,external_show_id',
     })
-    .select('id, artist_name, provider, external_show_id, show_date, venue_name, city, state, country, created_at, updated_at')
+    .select('id')
     .single();
-  const showRow = rawShowRow as ShowRow | null;
+  const showRow = rawShowRow as ShowIdRow | null;
 
   if (showError || !showRow) {
     console.error('Failed to cache KGLW show:', showError);
@@ -202,6 +203,7 @@ async function cacheKglwShow(show: NormalizedShow): Promise<void> {
   const insertedSetlists = (rawInsertedSetlists ?? []) as SetlistRow[];
 
   if (setlistError) {
+    await supabase.from('shows').delete().eq('id', showRow.id);
     console.error('Failed to cache KGLW setlists:', setlistError);
     return;
   }
@@ -235,16 +237,18 @@ async function cacheKglwShow(show: NormalizedShow): Promise<void> {
     .insert(songRows as never);
 
   if (songError) {
+    await supabase.from('shows').delete().eq('id', showRow.id);
     console.error('Failed to cache KGLW songs:', songError);
   }
 }
 
 export async function getRoutedShowByArtistAndDate(input: ProviderFetchInput): Promise<NormalizedShow | null> {
-  const normalizedArtistName = isKglwArtistName(input.artistName)
+  const isKglwRoute = isKglwArtistName(input.artistName);
+  const normalizedArtistName = isKglwRoute
     ? KGLW_CANONICAL_ARTIST_NAME
     : normalizeText(input.artistName);
 
-  if (!isKglwArtistName(normalizedArtistName)) {
+  if (!isKglwRoute) {
     return getNormalizedShowByArtistAndDate({
       ...input,
       artistName: normalizedArtistName,

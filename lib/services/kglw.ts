@@ -86,10 +86,10 @@ function parseTransitionNote(song: JsonObject): string | undefined {
 
   const booleanTransitionValues = [
     song.is_segue,
-    song.segue,
     song.is_transition,
-    song.transition,
     song.segued,
+    typeof song.segue === 'boolean' || typeof song.segue === 'number' ? song.segue : null,
+    typeof song.transition === 'boolean' || typeof song.transition === 'number' ? song.transition : null,
   ];
   const hasSegueFlag = booleanTransitionValues.some((value) => value === true || value === 1 || value === '1');
   return hasSegueFlag ? 'Segue into next song' : undefined;
