@@ -58,7 +58,7 @@ export default function HomePageClient({ initialPhotoMetadata, showResult, authE
             </summary>
             <div className="space-y-3 border-t border-slate-800/60 p-4 pt-3 text-sm text-slate-300 sm:text-base">
               <p className="max-w-2xl">
-                Upload a photo to preview it and pull out the original capture date, latitude, and longitude from its EXIF metadata. This Data is then matched to Phish show information from phish.net. If No EXIF data is found, you can manually enter a date to see if there was a show on that day. When possible, phish.in data and audio links will be included for the show. If a match is found, you can click the link to view the show on phish.net.
+                Upload a photo to preview it and pull out the original capture date, latitude, and longitude from its EXIF metadata. That data is then matched to dedicated setlist providers for Phish, Goose, King Gizzard &amp; the Lizard Wizard, and more. If no EXIF data is found, you can manually enter a date to see if there was a show on that day. When possible, phish.in data and audio links will be included for Phish shows.
               </p>
               <p className="text-xs text-slate-400 sm:text-sm">
                 Sign in with Google or GitHub to save uploaded WebP photos and matched show details directly to your personal library!

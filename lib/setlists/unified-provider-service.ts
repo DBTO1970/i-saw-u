@@ -180,6 +180,7 @@ function buildSetsFromPhishRows(rows: JsonObject[]): NormalizedShow['sets'] {
       title,
       position: songsSet.songs.length + 1,
       durationSeconds: parseDurationSeconds(row.tracktime),
+      notes: normalizeText(row.notes ?? row.note) || undefined,
     });
     grouped.set(setName, songsSet);
   });
@@ -203,6 +204,7 @@ function buildSetsFromStructuredData(rawSets: unknown): NormalizedShow['sets'] {
             title,
             position: songIndex + 1,
             durationSeconds: parseDurationSeconds(song.durationSeconds ?? song.duration ?? song.tracktime ?? song.length),
+            notes: normalizeText(song.notes ?? song.note ?? song.footnote) || undefined,
           };
         })
         .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
@@ -446,7 +448,7 @@ export function normalizeProviderShowToLegacyShow(normalizedShow: NormalizedShow
       setlist.push({
         type: 'song',
         label: song.title,
-        notes: null,
+        notes: song.notes ?? null,
         durationSeconds: song.durationSeconds ?? null,
         set: normalizedSetLabel,
         position: song.position,

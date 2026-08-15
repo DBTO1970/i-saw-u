@@ -1,4 +1,4 @@
-export type UnifiedProvider = 'phishnet' | 'elgoose' | 'relisten' | 'bmfsdb' | 'setlistfm';
+export type UnifiedProvider = 'phishnet' | 'elgoose' | 'relisten' | 'bmfsdb' | 'kglw' | 'setlistfm';
 
 export type ProviderTier = 'tier1_exact' | 'tier2_fallback';
 
@@ -18,6 +18,7 @@ export interface NormalizedShow {
       title: string;
       position: number;
       durationSeconds?: number;
+      notes?: string;
     }[];
   }[];
 }

@@ -1,9 +1,9 @@
 'use server';
 
 import {
-  getNormalizedShowByArtistAndDate,
   normalizeProviderShowToLegacyShow,
 } from '../../lib/setlists/unified-provider-service';
+import { getRoutedShowByArtistAndDate } from '../../lib/services/show-router';
 
 const NO_SHOW_RESULT = {
   show: null,
@@ -395,7 +395,7 @@ async function fetchShowRecordByDate(dateString, apiKey) {
 }
 
 async function fetchPrimaryShow(dateString, apiKey, artistName = 'Phish') {
-  const normalizedShow = await getNormalizedShowByArtistAndDate({
+  const normalizedShow = await getRoutedShowByArtistAndDate({
     artistName,
     showDate: dateString,
     phishNetApiKey: apiKey,
