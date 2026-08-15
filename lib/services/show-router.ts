@@ -47,6 +47,22 @@ function getAdminClientSafely() {
   }
 }
 
+async function deleteCachedKglwShow(showId: string, context: string) {
+  const supabase = getAdminClientSafely();
+  if (!supabase) {
+    return;
+  }
+
+  const { error } = await supabase
+    .from('shows')
+    .delete()
+    .eq('id', showId);
+
+  if (error) {
+    console.error(`Failed to delete cached KGLW show after ${context}:`, error);
+  }
+}
+
 function inferSetType(setName: string, setIndex: number): SetType {
   const normalized = normalizeText(setName).toLowerCase();
   if (normalized.includes('encore') || normalized === 'e') {
@@ -96,6 +112,10 @@ async function getCachedKglwShowByDate(showDate: string): Promise<NormalizedShow
     return null;
   }
 
+  if (!setlistRows.length) {
+    return null;
+  }
+
   const setlistIds = setlistRows.map((row) => row.id);
   const { data: rawSongRows, error: songError } = setlistIds.length
     ? await supabase
@@ -108,6 +128,10 @@ async function getCachedKglwShowByDate(showDate: string): Promise<NormalizedShow
 
   if (songError) {
     console.error('Failed to read cached KGLW songs:', songError);
+    return null;
+  }
+
+  if (!songRows.length) {
     return null;
   }
 
@@ -158,34 +182,27 @@ async function cacheKglwShow(show: NormalizedShow): Promise<void> {
     venue_name: show.venueName || null,
     city: show.city || null,
     state: show.state || null,
-    country: show.country || null,
+    country: show.country || 'US',
   };
 
   const { data: rawShowRow, error: showError } = await supabase
     .from('shows')
-    .upsert([showPayload] as never, {
-      onConflict: 'provider,external_show_id',
-    })
+    .insert([showPayload] as never)
     .select('id')
     .single();
   const showRow = rawShowRow as ShowIdRow | null;
+
+  if (showError?.code === '23505') {
+    return;
+  }
 
   if (showError || !showRow) {
     console.error('Failed to cache KGLW show:', showError);
     return;
   }
 
-  const { error: deleteSetlistsError } = await supabase
-    .from('setlists')
-    .delete()
-    .eq('show_id', showRow.id);
-
-  if (deleteSetlistsError) {
-    console.error('Failed to clear cached KGLW setlists:', deleteSetlistsError);
-    return;
-  }
-
   if (!show.sets.length) {
+    await deleteCachedKglwShow(showRow.id, 'empty set cache write');
     return;
   }
 
@@ -203,7 +220,7 @@ async function cacheKglwShow(show: NormalizedShow): Promise<void> {
   const insertedSetlists = (rawInsertedSetlists ?? []) as SetlistRow[];
 
   if (setlistError) {
-    await supabase.from('shows').delete().eq('id', showRow.id);
+    await deleteCachedKglwShow(showRow.id, 'setlist cache write failure');
     console.error('Failed to cache KGLW setlists:', setlistError);
     return;
   }
@@ -229,6 +246,7 @@ async function cacheKglwShow(show: NormalizedShow): Promise<void> {
   });
 
   if (!songRows.length) {
+    await deleteCachedKglwShow(showRow.id, 'empty song cache write');
     return;
   }
 
@@ -237,7 +255,7 @@ async function cacheKglwShow(show: NormalizedShow): Promise<void> {
     .insert(songRows as never);
 
   if (songError) {
-    await supabase.from('shows').delete().eq('id', showRow.id);
+    await deleteCachedKglwShow(showRow.id, 'song cache write failure');
     console.error('Failed to cache KGLW songs:', songError);
   }
 }
