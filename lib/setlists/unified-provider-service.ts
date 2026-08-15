@@ -38,6 +38,13 @@ const RELISTEN_ARTIST_SLUGS: Record<string, string> = {
   'widespread panic': 'widespread-panic',
 };
 
+const KGLW_ARTIST_ALIASES = new Set([
+  'king gizzard & the lizard wizard',
+  'king gizzard and the lizard wizard',
+  'king gizzard',
+  'kglw',
+]);
+
 function normalizeText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
@@ -219,6 +226,77 @@ function buildSetsFromStructuredData(rawSets: unknown): NormalizedShow['sets'] {
     .filter((set): set is NonNullable<typeof set> => set !== null);
 }
 
+function selectKglwShowRecord(rows: JsonObject[]): JsonObject | null {
+  if (!rows.length) {
+    return null;
+  }
+
+  const match = rows.find((row) => {
+    const rowArtist = toArtistKey(normalizeText(row.artist));
+    return KGLW_ARTIST_ALIASES.has(rowArtist) || rowArtist.includes('king gizzard');
+  });
+
+  return match ?? rows[0];
+}
+
+function toSortableNumber(value: unknown): number {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : Number.MAX_SAFE_INTEGER;
+}
+
+function normalizeKglwSetName(row: JsonObject, fallbackIndex: number): string {
+  const setType = normalizeText(row.settype == null ? '' : String(row.settype));
+  const setNumber = normalizeText(row.setnumber == null ? '' : String(row.setnumber));
+
+  if (setType.toLowerCase().includes('encore') || setNumber.toLowerCase().includes('encore')) {
+    return 'Encore';
+  }
+
+  if (setNumber) {
+    return `Set ${setNumber}`;
+  }
+
+  if (setType) {
+    return setType;
+  }
+
+  return `Set ${fallbackIndex + 1}`;
+}
+
+function buildSetsFromKglwRows(rows: JsonObject[]): NormalizedShow['sets'] {
+  const grouped = new Map<string, NormalizedShow['sets'][number]>();
+
+  const sorted = [...rows].sort((left, right) => {
+    const leftSetNumber = toSortableNumber(left.setnumber);
+    const rightSetNumber = toSortableNumber(right.setnumber);
+    if (leftSetNumber !== rightSetNumber) {
+      return leftSetNumber - rightSetNumber;
+    }
+
+    const leftPosition = Number(left.position ?? Number.MAX_SAFE_INTEGER);
+    const rightPosition = Number(right.position ?? Number.MAX_SAFE_INTEGER);
+    return leftPosition - rightPosition;
+  });
+
+  sorted.forEach((row, index) => {
+    const title = normalizeText(row.songname);
+    if (!title) {
+      return;
+    }
+
+    const setName = normalizeKglwSetName(row, index);
+    const songsSet = grouped.get(setName) ?? { setName, songs: [] };
+    songsSet.songs.push({
+      title,
+      position: songsSet.songs.length + 1,
+      durationSeconds: parseDurationSeconds(row.tracktime),
+    });
+    grouped.set(setName, songsSet);
+  });
+
+  return [...grouped.values()];
+}
+
 async function fetchFromPhishNet(input: ProviderFetchInput): Promise<NormalizedShow | null> {
   if (!input.phishNetApiKey) {
     throw new Error('PHISHNET_API_KEY is required for Phish setlist ingestion.');
@@ -311,6 +389,47 @@ async function fetchFromRelisten(input: ProviderFetchInput, artistSlug: string):
     country: normalizeText(show.country) || 'US',
     tier: 'tier1_exact',
     sets: buildSetsFromStructuredData(show.sets ?? show.tracks),
+  };
+}
+
+async function fetchFromKglw(input: ProviderFetchInput): Promise<NormalizedShow | null> {
+  const base = 'https://kglw.net/api/v2';
+  const [showPayload, setlistPayload] = await Promise.all([
+    fetchJsonOrThrow<unknown>(`${base}/shows/showdate/${input.showDate}.json`),
+    fetchJsonOrThrow<unknown>(`${base}/setlists/showdate/${input.showDate}.json`),
+  ]);
+
+  if (!showPayload) {
+    return null;
+  }
+
+  const showRows = pickPhishDataRows(showPayload);
+  if (!showRows.length) {
+    return null;
+  }
+
+  const showRecord = selectKglwShowRecord(showRows);
+  if (!showRecord) {
+    return null;
+  }
+
+  const showId = normalizeText(showRecord.show_id ?? showRecord.showid ?? showRecord.id);
+  const setlistRows = pickPhishDataRows(setlistPayload);
+  const scopedSetlistRows = showId
+    ? setlistRows.filter((row) => normalizeText(row.show_id ?? row.showid ?? row.id) === showId)
+    : setlistRows;
+
+  return {
+    artistName: normalizeText(showRecord.artist) || input.artistName,
+    provider: 'kglw',
+    externalId: showId || input.showDate,
+    showDate: normalizeText(showRecord.showdate) || input.showDate,
+    venueName: normalizeText(showRecord.venuename ?? showRecord.venue),
+    city: normalizeText(showRecord.city),
+    state: normalizeText(showRecord.state) || undefined,
+    country: normalizeText(showRecord.country) || 'USA',
+    tier: 'tier1_exact',
+    sets: buildSetsFromKglwRows(scopedSetlistRows),
   };
 }
 
@@ -421,6 +540,10 @@ export async function getNormalizedShowByArtistAndDate(input: ProviderFetchInput
       return goose;
     }
     return fetchFromRelisten(input, 'goose');
+  }
+
+  if (KGLW_ARTIST_ALIASES.has(artistKey) || artistKey.includes('king gizzard')) {
+    return fetchFromKglw(input);
   }
 
   const relistenSlug = RELISTEN_ARTIST_SLUGS[artistKey];

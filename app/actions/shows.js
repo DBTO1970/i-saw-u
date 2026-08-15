@@ -1072,6 +1072,13 @@ export async function getShowByDate(dateString, artistName = 'Phish') {
     };
   }
 
+  if (process.env.NEXT_PHASE === 'phase-production-build') {
+    return {
+      ...NO_SHOW_RESULT,
+      error: null,
+    };
+  }
+
   const phishNetApiKey = process.env.PHISHNET_API_KEY;
 
   try {

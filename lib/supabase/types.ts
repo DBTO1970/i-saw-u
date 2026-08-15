@@ -130,7 +130,7 @@ export interface Database {
         Row: {
           id: string;
           artist_name: string;
-          provider: 'phishnet' | 'elgoose' | 'relisten' | 'bmfsdb' | 'setlistfm';
+          provider: 'phishnet' | 'elgoose' | 'relisten' | 'bmfsdb' | 'kglw' | 'setlistfm';
           external_show_id: string;
           show_date: string;
           venue_name: string | null;
@@ -143,7 +143,7 @@ export interface Database {
         Insert: {
           id?: string;
           artist_name: string;
-          provider: 'phishnet' | 'elgoose' | 'relisten' | 'bmfsdb' | 'setlistfm';
+          provider: 'phishnet' | 'elgoose' | 'relisten' | 'bmfsdb' | 'kglw' | 'setlistfm';
           external_show_id: string;
           show_date: string;
           venue_name?: string | null;
@@ -156,7 +156,7 @@ export interface Database {
         Update: {
           id?: string;
           artist_name?: string;
-          provider?: 'phishnet' | 'elgoose' | 'relisten' | 'bmfsdb' | 'setlistfm';
+          provider?: 'phishnet' | 'elgoose' | 'relisten' | 'bmfsdb' | 'kglw' | 'setlistfm';
           external_show_id?: string;
           show_date?: string;
           venue_name?: string | null;
@@ -221,7 +221,7 @@ export interface Database {
       };
     };
     Enums: {
-      show_provider: 'phishnet' | 'elgoose' | 'relisten' | 'bmfsdb' | 'setlistfm';
+      show_provider: 'phishnet' | 'elgoose' | 'relisten' | 'bmfsdb' | 'kglw' | 'setlistfm';
       set_type: 'set_1' | 'set_2' | 'encore' | 'other';
     };
   };

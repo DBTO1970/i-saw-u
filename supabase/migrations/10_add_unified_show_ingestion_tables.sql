@@ -1,7 +1,7 @@
 DO $$
 BEGIN
   IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'show_provider') THEN
-    CREATE TYPE public.show_provider AS ENUM ('phishnet', 'elgoose', 'relisten', 'bmfsdb', 'setlistfm');
+    CREATE TYPE public.show_provider AS ENUM ('phishnet', 'elgoose', 'relisten', 'bmfsdb', 'kglw', 'setlistfm');
   END IF;
 END
 $$;
