@@ -6,16 +6,13 @@ i-saw-u is a Next.js web app for exploring concert and event photos by matching 
 
 - Upload an image and preview it in the browser
 - Extract EXIF metadata such as capture date, latitude, and longitude
-<<<<<<< HEAD
 - Match the photo date to a show from multi-provider setlist sources (Phish.net, KGLW.net, ElGoose, Relisten, Setlist.fm fallback)
-=======
-- Match the photo date to a show from multi-provider setlist sources (Phish.net, KGLW.net, ElGoose, Relisten, Setlist.fm fallback)
->>>>>>> agents/5e6790ac-e824-4f12-bef0-787ba58397e8
 - Display related show information, links, and metadata when available
 - Let signed-in users save photos and matches to a personal library
 
 ## Future development
 - create "Show" mode which allows user to open camera in app, load show info, start time, and app will add song info as photos are taken. 
+
 ## Tech stack
 
 - Next.js 14 (App Router)
@@ -45,7 +42,7 @@ i-saw-u is a Next.js web app for exploring concert and event photos by matching 
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/DBTO1970/i-saw-u.git
+   git clone https://github.com
    cd i-saw-u
    ```
 
@@ -66,7 +63,7 @@ i-saw-u is a Next.js web app for exploring concert and event photos by matching 
    SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
    PHISHNET_API_KEY=your-phishnet-api-key
    SETLISTFM_API_KEY=your-setlistfm-api-key
-   RELISTEN_API_BASE_URL=https://relisten.net/api/v1
+   RELISTEN_API_BASE_URL=https://relisten.net
    ```
 
    KGLW.net lookups use the public API and do not require an API key.
@@ -94,4 +91,11 @@ i-saw-u is a Next.js web app for exploring concert and event photos by matching 
 
 ## License
 
-This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+This project is licensed under a **Business Source License (BSL)**. 
+
+### Quick Summary
+* **Personal & Educational Use**: 100% Free. You can fork this repo, run it locally, and use it for your personal photo libraries.
+* **Commercial Use**: Prohibited. You may not host this as a paid service, use it for commercial events, or integrate it into a commercial product without a separate license.
+* **Open Source Transition**: On **August 15, 2029**, this project will automatically and permanently convert to the standard open-source **MIT License**.
+
+For commercial licensing requests or inquiries, please contact the repository owner. See the full [LICENSE](LICENSE) file for exact legal terms.
