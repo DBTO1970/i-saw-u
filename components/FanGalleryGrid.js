@@ -5,6 +5,15 @@ import PhotoLikeButton from './PhotoLikeButton';
 
 export default function FanGalleryGrid({ photos = [], currentUserId = null }) {
   const [selectedPhoto, setSelectedPhoto] = useState(null);
+  const [failedThumbs, setFailedThumbs] = useState(new Set());
+
+  function handleThumbError(photoId) {
+    setFailedThumbs((prev) => {
+      const next = new Set(prev);
+      next.add(photoId);
+      return next;
+    });
+  }
   const visiblePhotos = useMemo(
     () => photos.filter((photo) => !currentUserId || photo.user_id !== currentUserId),
     [photos, currentUserId]
@@ -24,11 +33,12 @@ export default function FanGalleryGrid({ photos = [], currentUserId = null }) {
               {photo.thumb_url || photo.url ? (
                 <div className="relative aspect-square w-full overflow-hidden">
                   <img
-                    src={photo.thumb_url || photo.url}
+                    src={(!failedThumbs.has(photo.id) && photo.thumb_url) ? photo.thumb_url : photo.url}
                     alt={photo.file_name || 'Fan photo'}
                     className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                     loading="lazy"
                     decoding="async"
+                    onError={!failedThumbs.has(photo.id) ? () => handleThumbError(photo.id) : undefined}
                   />
                 </div>
               ) : (
