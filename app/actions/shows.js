@@ -1036,6 +1036,7 @@ export async function getShowByDate(dateString, artistName = 'Phish') {
 
   const phishNetApiKey = process.env.PHISHNET_API_KEY;
   const normalizedArtistName = normalizeText(artistName) || 'Phish';
+  const normalizedArtistKey = normalizedArtistName.toLowerCase();
   console.log('[i-saw-u Debug]: getShowByDate request', {
     selectedArtist: normalizedArtistName,
     requestedDateRaw: dateString,
@@ -1064,7 +1065,7 @@ export async function getShowByDate(dateString, artistName = 'Phish') {
       };
     }
 
-    if (normalizedArtistName.toLowerCase() !== 'phish') {
+    if (normalizedArtistKey !== 'phish') {
       console.log('[i-saw-u Debug]: No exact show found for non-Phish artist', {
         selectedArtist: normalizedArtistName,
         queryDate: normalizedDateString,
