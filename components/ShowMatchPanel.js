@@ -889,7 +889,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
               onChange={(event) => {
                 const selectedDate = event.target.value;
                 const normalizedDate = normalizeDateInputString(selectedDate);
-                setShowLookupDate(normalizedDate || selectedDate);
+                setShowLookupDate(normalizedDate);
                 if (!normalizedDate) {
                   setActiveDate('');
                   setStatusMessage('Please select a date before searching.');
