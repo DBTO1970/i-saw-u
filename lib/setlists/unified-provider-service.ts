@@ -56,6 +56,14 @@ function normalizeText(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
 }
 
+function logProviderResponse(provider: string, showDate: string, payload: unknown): void {
+  console.log('[i-saw-u Debug]: Raw provider API response', {
+    provider,
+    showDate,
+    payload,
+  });
+}
+
 function toArtistKey(artistName: string): string {
   return normalizeText(artistName).toLowerCase();
 }
@@ -340,6 +348,8 @@ async function fetchFromPhishNet(input: ProviderFetchInput): Promise<NormalizedS
     fetchJsonOrThrow<unknown>(showUrl),
     fetchJsonOrThrow<unknown>(setlistUrl),
   ]);
+  logProviderResponse('phishnet:shows', input.showDate, showPayload);
+  logProviderResponse('phishnet:setlists', input.showDate, setlistPayload);
 
   if (!showPayload) {
     return null;
@@ -374,6 +384,7 @@ async function fetchFromPhishNet(input: ProviderFetchInput): Promise<NormalizedS
 async function fetchFromElGoose(input: ProviderFetchInput): Promise<NormalizedShow | null> {
   const url = `https://elgoose.net/api/v1/shows/${input.showDate}`;
   const payload = await fetchJsonOrThrow<unknown>(url);
+  logProviderResponse('elgoose', input.showDate, payload);
   if (!payload || typeof payload !== 'object') {
     return null;
   }
@@ -403,6 +414,7 @@ async function fetchFromRelisten(input: ProviderFetchInput, artistSlug: string):
   const base = normalizeText(process.env.RELISTEN_API_BASE_URL) || 'https://relisten.net/api/v1';
   const url = `${base}/shows/${encodeURIComponent(artistSlug)}/${input.showDate}`;
   const payload = await fetchJsonOrThrow<unknown>(url);
+  logProviderResponse(`relisten:${artistSlug}`, input.showDate, payload);
   if (!payload || typeof payload !== 'object') {
     return null;
   }
@@ -428,6 +440,8 @@ async function fetchFromKglw(input: ProviderFetchInput): Promise<NormalizedShow 
     fetchJsonOrThrow<unknown>(`${base}/shows/showdate/${input.showDate}.json`),
     fetchJsonOrThrow<unknown>(`${base}/setlists/showdate/${input.showDate}.json`),
   ]);
+  logProviderResponse('kglw:shows', input.showDate, showPayload);
+  logProviderResponse('kglw:setlists', input.showDate, setlistPayload);
 
   if (!showPayload) {
     return null;
@@ -491,6 +505,7 @@ async function fetchFromSetlistFm(input: ProviderFetchInput): Promise<Normalized
       'x-api-key': input.setlistFmApiKey,
     },
   });
+  logProviderResponse('setlistfm', input.showDate, payload);
 
   if (!payload || typeof payload !== 'object') {
     return null;
@@ -559,32 +574,46 @@ export async function getNormalizedShowByArtistAndDate(input: ProviderFetchInput
   if (!artistName) {
     throw new Error('artistName is required for provider lookup.');
   }
+  console.log('[i-saw-u Debug]: Provider routing request', {
+    selectedArtist: artistName,
+    showDate: input.showDate,
+  });
 
   const artistKey = toArtistKey(artistName);
   if (artistKey === 'phish') {
-    return fetchFromPhishNet(input);
+    const result = await fetchFromPhishNet(input);
+    console.log('[i-saw-u Debug]: Provider routing result', { provider: 'phishnet', showDate: input.showDate, matched: Boolean(result) });
+    return result;
   }
   if (artistKey === 'goose') {
     const goose = await fetchFromElGoose(input);
     if (goose) {
+      console.log('[i-saw-u Debug]: Provider routing result', { provider: 'elgoose', showDate: input.showDate, matched: true });
       return goose;
     }
-    return fetchFromRelisten(input, 'goose');
+    const relistenGoose = await fetchFromRelisten(input, 'goose');
+    console.log('[i-saw-u Debug]: Provider routing result', { provider: 'relisten', showDate: input.showDate, matched: Boolean(relistenGoose) });
+    return relistenGoose;
   }
 
   if (KGLW_ARTIST_ALIASES.has(artistKey) || artistKey.includes('king gizzard')) {
-    return fetchFromKglw(input);
+    const result = await fetchFromKglw(input);
+    console.log('[i-saw-u Debug]: Provider routing result', { provider: 'kglw', showDate: input.showDate, matched: Boolean(result) });
+    return result;
   }
 
   const relistenSlugs = getRelistenSlugsForArtist(artistKey);
   for (const relistenSlug of relistenSlugs) {
     const relisten = await fetchFromRelisten(input, relistenSlug);
     if (relisten) {
+      console.log('[i-saw-u Debug]: Provider routing result', { provider: `relisten:${relistenSlug}`, showDate: input.showDate, matched: true });
       return relisten;
     }
   }
 
-  return fetchFromSetlistFm(input);
+  const fallback = await fetchFromSetlistFm(input);
+  console.log('[i-saw-u Debug]: Provider routing result', { provider: 'setlistfm', showDate: input.showDate, matched: Boolean(fallback) });
+  return fallback;
 }
 
 export function normalizeProviderShowToLegacyShow(normalizedShow: NormalizedShow): LegacyShow {

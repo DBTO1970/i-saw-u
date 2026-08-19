@@ -4,7 +4,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getShowByDate, searchLocationAutocomplete, searchShowsByLocation } from '../app/actions/shows';
 import ImageExifUploader from './ImageExifUploader';
 import ShowMatchCard from './ShowMatchCard';
-import LiveModeController from './LiveModeController';
 import { installGlobalClientDiagnostics } from '../lib/client-diagnostics';
 import { deriveCurrentSongLabelFromContext } from '../lib/photo-show-context';
 
@@ -80,6 +79,18 @@ function parseCoordinateNumber(value) {
   }
 
   return null;
+}
+
+function normalizeDateInputString(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const trimmed = value.trim();
+  const match = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (!match) {
+    return '';
+  }
+  return `${match[1]}-${match[2]}-${match[3]}`;
 }
 
 function formatDateDisplay(date, time) {
@@ -535,14 +546,40 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
     let isActive = true;
     setIsLoadingShow(true);
     setStatusMessage(`Looking up the matching ${displayArtistName} show...`);
+    console.log('[i-saw-u Debug]: Date selection lookup start', {
+      selectedArtistName,
+      datePickerValue: showLookupDate,
+      queryDate: activeDate,
+      requestedProviderHint: artistSelection === 'phish'
+        ? 'phish.net'
+        : artistSelection === 'goose'
+          ? 'elgoose/relisten'
+          : artistSelection === 'kglw'
+            ? 'kglw'
+            : artistSelection === 'dead'
+              ? 'relisten'
+              : artistSelection === 'billy'
+                ? 'setlist.fm'
+                : 'setlist.fm',
+    });
 
     getShowByDate(activeDate, selectedArtistName || 'Phish')
       .then((result) => {
         if (!isActive) {
           return;
         }
+        console.log('[i-saw-u Debug]: getShowByDate response', result);
         setShowResult(result);
         if (result?.show) {
+          console.log('[i-saw-u Debug]: Matched show metadata', {
+            provider: result.show.provider || 'unknown',
+            artistName: result.show.artistName || selectedArtistName || 'Phish',
+            date: result.show.date || null,
+            venueName: result.show.venueName || null,
+            city: result.show.city || null,
+            state: result.show.state || null,
+            setlistEntries: Array.isArray(result.show.setlist) ? result.show.setlist.length : 0,
+          });
           setStatusMessage('Show match found.');
           return;
         }
@@ -560,6 +597,10 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
         if (!isActive) {
           return;
         }
+        console.log('[i-saw-u Debug]: getShowByDate failed', {
+          selectedArtistName,
+          queryDate: activeDate,
+        });
         setShowResult({ show: null, error: 'Unable to load show data right now.' });
         setStatusMessage('Unable to load show data right now.');
       })
@@ -729,12 +770,6 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
       calibrationMetadata={calibrationMetadata}
     />
 
-    <LiveModeController
-      defaultShowData={effectiveShow || null}
-      defaultMatchedShowDate={effectiveShow?.date || ''}
-      defaultShowStartTime={showStartTime || '20:00'}
-    />
-
     {initialSharedPhoto ? (
       <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100">
         Shared photo received from your device share sheet: <strong>{initialSharedPhoto.fileName}</strong>
@@ -783,6 +818,10 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
                 onChange={(event) => {
                   const nextSelection = event.target.value;
                   setArtistSelection(nextSelection);
+                  console.log('[i-saw-u Debug]: Artist selection changed', {
+                    artistSelection: nextSelection,
+                    artistLabel: getArtistOptionLabel(nextSelection),
+                  });
                   if (nextSelection !== 'other') {
                     setCustomArtistName('');
                   }
@@ -829,7 +868,13 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
               setStatusMessage('Enter an artist name before searching Setlist.fm fallback matches.');
               return;
             }
-            setActiveDate(showLookupDate);
+            const normalizedDate = normalizeDateInputString(showLookupDate);
+            console.log('[i-saw-u Debug]: Date form submit', {
+              selectedArtistName,
+              datePickerValue: showLookupDate,
+              queryDate: normalizedDate || showLookupDate,
+            });
+            setActiveDate(normalizedDate || showLookupDate);
           }}
         >
           <label className="flex-1 text-sm text-slate-300">
@@ -839,13 +884,19 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
               value={showLookupDate}
               onChange={(event) => {
                 const selectedDate = event.target.value;
-                setShowLookupDate(selectedDate);
-                if (!selectedDate) {
+                const normalizedDate = normalizeDateInputString(selectedDate);
+                setShowLookupDate(normalizedDate || selectedDate);
+                if (!normalizedDate) {
                   setStatusMessage('Please select a date before searching.');
                   return;
                 }
-                setActiveDate(selectedDate);
-                setStatusMessage(`Looking up ${displayArtistName} show for ${selectedDate}...`);
+                console.log('[i-saw-u Debug]: Date picker changed', {
+                  selectedArtistName,
+                  datePickerValue: selectedDate,
+                  queryDate: normalizedDate,
+                });
+                setActiveDate(normalizedDate);
+                setStatusMessage(`Looking up ${displayArtistName} show for ${normalizedDate}...`);
               }}
               className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-white outline-none ring-cyan-500/50 focus:ring"
             />
