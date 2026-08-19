@@ -2,36 +2,56 @@ import { describe, expect, it } from 'vitest';
 import { normalizeKglwShowPayload, KGLW_CANONICAL_ARTIST_NAME } from '../lib/services/kglw';
 
 describe('normalizeKglwShowPayload', () => {
-  it('normalizes a KGLW show response into the shared show format', () => {
+  it('normalizes a KGLW setlists endpoint response (flat per-song rows) into the shared show format', () => {
+    // The KGLW /api/v2/setlists/showdate endpoint returns one row per song,
+    // each carrying show-level metadata (venue, city, show_id, etc.) as well.
     const payload = {
       error: 0,
       data: [
         {
-          show_id: '20241101',
+          show_id: 1694538149,
           showdate: '2024-11-01',
-          venue: 'The Gorge Amphitheatre',
+          songname: 'Robot Stop',
+          settype: 'Set',
+          setnumber: '1',
+          position: 1,
+          tracktime: '4:57',
+          footnote: 'Tour debut',
+          transition: ', ',
+          venuename: 'The Gorge Amphitheatre',
           city: 'George',
           state: 'WA',
           country: 'US',
-          setlist: [
-            {
-              set: 'Set 1',
-              song_name: 'Robot Stop',
-              duration: '4:57',
-              notes: 'Tour debut',
-              segue: true,
-            },
-            {
-              set: 'Set 1',
-              song_name: 'Big Fig Wasp',
-              duration: 248,
-            },
-            {
-              set: 'Encore',
-              song_name: 'Magma',
-              transition_note: '-> Motor Spirit',
-            },
-          ],
+        },
+        {
+          show_id: 1694538149,
+          showdate: '2024-11-01',
+          songname: 'Big Fig Wasp',
+          settype: 'Set',
+          setnumber: '1',
+          position: 2,
+          tracktime: '4:08',
+          footnote: '',
+          transition: '',
+          venuename: 'The Gorge Amphitheatre',
+          city: 'George',
+          state: 'WA',
+          country: 'US',
+        },
+        {
+          show_id: 1694538149,
+          showdate: '2024-11-01',
+          songname: 'Magma',
+          settype: 'Encore',
+          setnumber: '2',
+          position: 1,
+          tracktime: '',
+          footnote: '',
+          transition: '> Motor Spirit',
+          venuename: 'The Gorge Amphitheatre',
+          city: 'George',
+          state: 'WA',
+          country: 'US',
         },
       ],
     };
@@ -41,7 +61,7 @@ describe('normalizeKglwShowPayload', () => {
     expect(normalized).toEqual({
       artistName: KGLW_CANONICAL_ARTIST_NAME,
       provider: 'kglw',
-      externalId: '20241101',
+      externalId: '1694538149',
       showDate: '2024-11-01',
       venueName: 'The Gorge Amphitheatre',
       city: 'George',
@@ -73,7 +93,7 @@ describe('normalizeKglwShowPayload', () => {
               title: 'Magma',
               position: 1,
               durationSeconds: undefined,
-              notes: '-> Motor Spirit',
+              notes: '> Motor Spirit',
             },
           ],
         },

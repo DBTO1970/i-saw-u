@@ -361,10 +361,15 @@ async function fetchFromPhishNet(input: ProviderFetchInput): Promise<NormalizedS
   }
 
   const showRecord = showRows.find((row) => normalizeText(row.artist_name).toLowerCase() === 'phish') ?? showRows[0];
-  const showId = normalizeText(showRecord.showid ?? showRecord.id);
+  // showid may be a number from the API, so coerce to string before normalizing
+  const rawShowId = showRecord.showid ?? showRecord.id;
+  const showId = rawShowId != null ? String(rawShowId).trim() : '';
   const setlistRows = pickPhishDataRows(setlistPayload);
   const scopedSetlistRows = showId
-    ? setlistRows.filter((row) => normalizeText(row.showid) === showId)
+    ? setlistRows.filter((row) => {
+        const rowShowId = row.showid ?? row.id;
+        return rowShowId != null && String(rowShowId).trim() === showId;
+      })
     : setlistRows;
 
   return {
@@ -457,10 +462,15 @@ async function fetchFromKglw(input: ProviderFetchInput): Promise<NormalizedShow 
     return null;
   }
 
-  const showId = normalizeText(showRecord.show_id ?? showRecord.showid ?? showRecord.id);
+  // show IDs may be numeric from the API; coerce to string for comparison
+  const rawShowId = showRecord.show_id ?? showRecord.showid ?? showRecord.id;
+  const showId = rawShowId != null ? String(rawShowId).trim() : '';
   const setlistRows = pickPhishDataRows(setlistPayload);
   const scopedSetlistRows = showId
-    ? setlistRows.filter((row) => normalizeText(row.show_id ?? row.showid ?? row.id) === showId)
+    ? setlistRows.filter((row) => {
+        const rowId = row.show_id ?? row.showid ?? row.id;
+        return rowId != null && String(rowId).trim() === showId;
+      })
     : setlistRows;
 
   return {
