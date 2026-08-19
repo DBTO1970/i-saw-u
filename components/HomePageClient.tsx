@@ -77,6 +77,9 @@ export default function HomePageClient({ initialPhotoMetadata, showResult, authE
                 </a>
                 .
               </p>
+              <a href="https://www.instagram.com/dbto/" target="_blank" rel="noreferrer" className="text-cyan-400 underline decoration-cyan-500/30 underline-offset-4 transition-colors hover:text-cyan-300">
+                Instagram
+              </a>
             </div>
           </details>
         </div>
