@@ -20,17 +20,38 @@ const PHISH_SHOW_INDEX_LIMIT = 5000;
 const PHISH_SHOW_INDEX_TTL_MS = 10 * 60 * 1000;
 const MAX_LOCATION_MATCHES = 20;
 const MAX_AUTOCOMPLETE_SUGGESTIONS = 12;
-const MAX_LIVE_MODE_SHOW_SEARCH_MATCHES = 12;
 
 let phishShowsCache = null;
 let phishShowsCacheUpdatedAt = 0;
 
 function isValidDateString(value) {
-  if (typeof value !== 'string') {
+  const parts = parseDateParts(value);
+  if (!parts) {
     return false;
   }
 
-  return /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(value));
+  const utcDate = new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
+  return (
+    utcDate.getUTCFullYear() === parts.year
+    && utcDate.getUTCMonth() + 1 === parts.month
+    && utcDate.getUTCDate() === parts.day
+  );
+}
+
+function normalizeLookupDate(value) {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const trimmed = value.trim();
+  const directMatch = trimmed.match(/^(\d{4}-\d{2}-\d{2})$/);
+  if (directMatch) {
+    return directMatch[1];
+  }
+  const isoPrefixMatch = trimmed.match(/^(\d{4}-\d{2}-\d{2})T/);
+  if (isoPrefixMatch) {
+    return isoPrefixMatch[1];
+  }
+  return '';
 }
 
 function normalizeText(value) {
@@ -823,73 +844,6 @@ export async function getPhishInShowLinks({ dateString, songTitle } = {}) {
   }
 }
 
-export async function searchLiveModeShowsByQuery(queryText) {
-  const query = normalizeSearchToken(queryText);
-  if (query.length < 2) {
-    return {
-      matches: [],
-      error: 'Enter at least 2 characters to search for a show.',
-    };
-  }
-
-  const apiKey = process.env.PHISHNET_API_KEY;
-  if (!apiKey) {
-    return {
-      matches: [],
-      error: 'The PHISHNET_API_KEY environment variable is not configured.',
-    };
-  }
-
-  try {
-    const rows = await fetchAllPhishShows(apiKey);
-    const scoredMatches = rows
-      .map((row) => {
-        const show = buildShowFromRecord(row, normalizeText(row?.showdate));
-        const venueToken = normalizeSearchToken(show.venueName);
-        const cityToken = normalizeSearchToken(show.city);
-        const stateToken = normalizeSearchToken(show.state);
-        const dateToken = normalizeSearchToken(show.date);
-        const combinedToken = normalizeSearchToken(`${show.date} ${show.venueName} ${show.city} ${show.state}`);
-
-        const score = (
-          scoreAutocompleteCandidate(query, venueToken) * 3
-          + scoreAutocompleteCandidate(query, cityToken) * 2
-          + scoreAutocompleteCandidate(query, stateToken)
-          + scoreAutocompleteCandidate(query, dateToken) * 2
-          + scoreAutocompleteCandidate(query, combinedToken)
-        );
-
-        if (score <= 0) {
-          return null;
-        }
-
-        return {
-          ...show,
-          matchScore: score,
-        };
-      })
-      .filter(Boolean)
-      .sort((left, right) => {
-        if (right.matchScore !== left.matchScore) {
-          return right.matchScore - left.matchScore;
-        }
-        return right.date.localeCompare(left.date);
-      })
-      .slice(0, MAX_LIVE_MODE_SHOW_SEARCH_MATCHES);
-
-    return {
-      matches: scoredMatches,
-      error: scoredMatches.length > 0 ? null : 'No shows matched that search.',
-    };
-  } catch (error) {
-    console.error('Failed to search live mode shows:', error);
-    return {
-      matches: [],
-      error: 'Unable to search shows right now.',
-    };
-  }
-}
-
 export async function searchShowsByLocation(criteria) {
   const venue = normalizeText(criteria?.venue);
   const city = normalizeText(criteria?.city);
@@ -1065,7 +1019,8 @@ export async function searchLocationAutocomplete(criteria) {
 }
 
 export async function getShowByDate(dateString, artistName = 'Phish') {
-  if (!isValidDateString(dateString)) {
+  const normalizedDateString = normalizeLookupDate(dateString);
+  if (!isValidDateString(normalizedDateString)) {
     return {
       ...NO_SHOW_RESULT,
       error: 'Please provide a valid date in YYYY-MM-DD format.',
@@ -1080,10 +1035,28 @@ export async function getShowByDate(dateString, artistName = 'Phish') {
   }
 
   const phishNetApiKey = process.env.PHISHNET_API_KEY;
+  const normalizedArtistName = normalizeText(artistName) || 'Phish';
+  const normalizedArtistKey = normalizedArtistName.toLowerCase();
+  console.log('[i-saw-u Debug]: getShowByDate request', {
+    selectedArtist: normalizedArtistName,
+    requestedDateRaw: dateString,
+    queryDate: normalizedDateString,
+  });
 
   try {
-    const primaryShow = await fetchPrimaryShow(dateString, phishNetApiKey, artistName);
+    const primaryShow = await fetchPrimaryShow(normalizedDateString, phishNetApiKey, normalizedArtistName);
     if (primaryShow) {
+      console.log('[i-saw-u Debug]: Matched show resolved', {
+        selectedArtist: normalizedArtistName,
+        queryDate: normalizedDateString,
+        dataSource: primaryShow.provider || 'unknown',
+        providerTier: primaryShow.providerTier || 'unknown',
+        showDate: primaryShow.date || null,
+        venueName: primaryShow.venueName || null,
+        city: primaryShow.city || null,
+        state: primaryShow.state || null,
+        setlistEntries: Array.isArray(primaryShow.setlist) ? primaryShow.setlist.length : 0,
+      });
       return {
         show: primaryShow,
         error: null,
@@ -1092,17 +1065,33 @@ export async function getShowByDate(dateString, artistName = 'Phish') {
       };
     }
 
-    if (String(artistName).trim().toLowerCase() !== 'phish') {
+    if (normalizedArtistKey !== 'phish') {
+      console.log('[i-saw-u Debug]: No exact show found for non-Phish artist', {
+        selectedArtist: normalizedArtistName,
+        queryDate: normalizedDateString,
+        dataSource: 'setlist/relisten routing',
+      });
       return {
         ...NO_SHOW_RESULT,
         error: 'No show found for the requested date.',
       };
     }
 
+    console.log('[i-saw-u Debug]: No exact Phish show; loading nearby and historical alternatives', {
+      selectedArtist: normalizedArtistName,
+      queryDate: normalizedDateString,
+      dataSource: 'phish.net',
+    });
     const [nearbyShows, relatedDateShows] = await Promise.all([
-      findNearbyShows(dateString, apiKey),
-      findHistoricalRelatedShows(dateString, apiKey),
+      findNearbyShows(normalizedDateString, phishNetApiKey),
+      findHistoricalRelatedShows(normalizedDateString, phishNetApiKey),
     ]);
+    console.log('[i-saw-u Debug]: Alternative matches resolved', {
+      selectedArtist: normalizedArtistName,
+      queryDate: normalizedDateString,
+      nearbyCount: nearbyShows.length,
+      relatedCount: relatedDateShows.length,
+    });
 
     return {
       ...NO_SHOW_RESULT,
@@ -1111,7 +1100,7 @@ export async function getShowByDate(dateString, artistName = 'Phish') {
       relatedDateShows,
     };
   } catch (error) {
-    console.error('Failed to fetch Phish show data:', error);
+    console.error('[i-saw-u Error]: Failed to fetch show data:', error);
     return {
       ...NO_SHOW_RESULT,
       error: 'Unable to fetch show data at the moment.',
