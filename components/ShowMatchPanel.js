@@ -155,6 +155,21 @@ function getArtistNameForSelection(selection, customArtistName) {
   return ARTIST_OPTIONS.find((entry) => entry.value === selection)?.artistName || 'Phish';
 }
 
+function getProviderHintForArtist(selection) {
+  switch (selection) {
+    case 'phish':
+      return 'phish.net';
+    case 'goose':
+      return 'elgoose/relisten';
+    case 'kglw':
+      return 'kglw';
+    case 'dead':
+      return 'relisten';
+    default:
+      return 'setlist.fm';
+  }
+}
+
 function createEmptyPhotoMetadata() {
   return {
     dateTimeOriginal: 'Not available',
@@ -550,17 +565,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
       selectedArtistName,
       datePickerValue: showLookupDate,
       queryDate: activeDate,
-      requestedProviderHint: artistSelection === 'phish'
-        ? 'phish.net'
-        : artistSelection === 'goose'
-          ? 'elgoose/relisten'
-          : artistSelection === 'kglw'
-            ? 'kglw'
-            : artistSelection === 'dead'
-              ? 'relisten'
-              : artistSelection === 'billy'
-                ? 'setlist.fm'
-                : 'setlist.fm',
+      requestedProviderHint: getProviderHintForArtist(artistSelection),
     });
 
     getShowByDate(activeDate, selectedArtistName || 'Phish')

@@ -1099,7 +1099,7 @@ export async function getShowByDate(dateString, artistName = 'Phish') {
       relatedDateShows,
     };
   } catch (error) {
-    console.error('[i-saw-u Debug]: Failed to fetch show data:', error);
+    console.error('[i-saw-u Error]: Failed to fetch show data:', error);
     return {
       ...NO_SHOW_RESULT,
       error: 'Unable to fetch show data at the moment.',
