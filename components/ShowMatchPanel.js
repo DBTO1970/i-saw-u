@@ -891,6 +891,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
                 const normalizedDate = normalizeDateInputString(selectedDate);
                 setShowLookupDate(normalizedDate || selectedDate);
                 if (!normalizedDate) {
+                  setActiveDate('');
                   setStatusMessage('Please select a date before searching.');
                   return;
                 }
