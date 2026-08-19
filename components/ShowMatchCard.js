@@ -64,7 +64,13 @@ function formatDate(value) {
     return 'Unknown';
   }
 
-  const parsed = new Date(value);
+  // Date-only strings (YYYY-MM-DD) must be parsed as local time to avoid
+  // UTC-midnight → local-time conversion shifting the display date back one day.
+  const dateOnlyMatch = typeof value === 'string' && value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  const parsed = dateOnlyMatch
+    ? new Date(Number(dateOnlyMatch[1]), Number(dateOnlyMatch[2]) - 1, Number(dateOnlyMatch[3]))
+    : new Date(value);
+
   if (Number.isNaN(parsed.getTime())) {
     return value;
   }

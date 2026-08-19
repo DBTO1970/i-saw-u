@@ -72,24 +72,40 @@ function normalizeSetName(rawSetName: unknown, fallbackIndex: number): string {
 }
 
 function parseTransitionNote(song: JsonObject): string | undefined {
-  const directTransition = normalizeText(
-    song.transition
-    ?? song.transition_note
-    ?? song.transition_notes
-    ?? song.segue_note
-    ?? song.segue_text
-    ?? song.segue,
-  );
-  if (directTransition) {
-    return directTransition;
+  const rawTransition = song.transition ?? song.transition_note ?? song.transition_notes ?? song.segue_note ?? song.segue_text;
+
+  if (typeof rawTransition === 'string') {
+    const trimmed = rawTransition.trim();
+    // ", " and ">" are segue marker punctuation (same convention as Phish.net's trans_mark).
+    // Convert them to a human-readable label rather than passing through raw punctuation.
+    if (trimmed === ',' || trimmed === '>' || trimmed === '->' || trimmed === '>>' || trimmed === ', ') {
+      return 'Segue into next song';
+    }
+    if (trimmed) {
+      return trimmed;
+    }
+  }
+
+  if (typeof rawTransition === 'boolean' || typeof rawTransition === 'number') {
+    return rawTransition === true || rawTransition === 1 ? 'Segue into next song' : undefined;
+  }
+
+  const segue = song.segue;
+  if (typeof segue === 'string') {
+    const trimmed = segue.trim();
+    if (trimmed === ',' || trimmed === '>' || trimmed === '->' || trimmed === '>>' || trimmed === ', ') {
+      return 'Segue into next song';
+    }
+    if (trimmed) {
+      return trimmed;
+    }
   }
 
   const booleanTransitionValues = [
     song.is_segue,
     song.is_transition,
     song.segued,
-    typeof song.segue === 'boolean' || typeof song.segue === 'number' ? song.segue : null,
-    typeof song.transition === 'boolean' || typeof song.transition === 'number' ? song.transition : null,
+    typeof segue === 'boolean' || typeof segue === 'number' ? segue : null,
   ];
   const hasSegueFlag = booleanTransitionValues.some((value) => value === true || value === 1 || value === '1');
   return hasSegueFlag ? 'Segue into next song' : undefined;
@@ -108,33 +124,38 @@ function buildSongNotes(song: JsonObject): string | undefined {
   return [...new Set(parts)].join(' • ');
 }
 
-function buildKglwSets(rawSongs: unknown): NormalizedShow['sets'] {
+// Build sets from the flat per-song rows returned by the KGLW setlists endpoint.
+// Each row carries setnumber + settype to identify which set the song belongs to,
+// and songname for the title — distinct from the nested structure used by other providers.
+function buildKglwSetsFromRows(rows: JsonObject[]): NormalizedShow['sets'] {
   const grouped = new Map<string, NormalizedShow['sets'][number]>();
 
-  asArray(rawSongs).forEach((rawSong, index) => {
-    const song = rawSong && typeof rawSong === 'object' ? rawSong as JsonObject : null;
-    const title = song
-      ? normalizeText(song.song_name ?? song.name ?? song.title ?? song.song ?? song.track)
-      : normalizeText(rawSong);
+  const sorted = [...rows].sort((a, b) => {
+    const aSet = Number(a.setnumber ?? Number.MAX_SAFE_INTEGER);
+    const bSet = Number(b.setnumber ?? Number.MAX_SAFE_INTEGER);
+    if (aSet !== bSet) {
+      return aSet - bSet;
+    }
+    return Number(a.position ?? Number.MAX_SAFE_INTEGER) - Number(b.position ?? Number.MAX_SAFE_INTEGER);
+  });
 
+  sorted.forEach((row, index) => {
+    const title = normalizeText(row.songname ?? row.song_name ?? row.song ?? row.title ?? row.name);
     if (!title) {
       return;
     }
 
     const setName = normalizeSetName(
-      song?.set ?? song?.set_name ?? song?.setName ?? song?.section ?? song?.section_name ?? song?.set_num,
+      row.settype && row.setnumber ? `${row.settype} ${row.setnumber}` : (row.settype ?? row.setnumber),
       grouped.size,
     );
     const setEntry = grouped.get(setName) ?? { setName, songs: [] };
-    const notes = song ? buildSongNotes(song) : undefined;
 
     setEntry.songs.push({
       title,
       position: setEntry.songs.length + 1,
-      durationSeconds: song
-        ? parseDurationSeconds(song.duration_seconds ?? song.duration ?? song.length ?? song.tracktime)
-        : undefined,
-      notes,
+      durationSeconds: parseDurationSeconds(row.tracktime ?? row.duration_seconds ?? row.duration ?? row.length),
+      notes: buildSongNotes(row),
     });
     grouped.set(setName, setEntry);
   });
@@ -162,20 +183,24 @@ export function normalizeKglwShowPayload(payload: unknown, showDate: string): No
     return null;
   }
 
-  const show = rows.find((row) => normalizeText(row.showdate) === showDate) ?? rows[0];
-  const sets = buildKglwSets(show.setlist ?? show.songs ?? show.song_list ?? show.tracks ?? show.playlist);
+  // The KGLW setlists endpoint returns flat per-song rows. Each row carries
+  // show-level metadata (venue, city, show_id, etc.) in addition to song data.
+  // Use the first row as the source of show-level fields.
+  const firstRow = rows[0];
+  const rawShowId = firstRow.show_id ?? firstRow.id ?? firstRow.uuid;
+  const externalId = rawShowId != null ? String(rawShowId).trim() : showDate;
 
   return {
     artistName: KGLW_CANONICAL_ARTIST_NAME,
     provider: 'kglw',
-    externalId: normalizeText(show.show_id ?? show.id ?? show.uuid) || showDate,
-    showDate: normalizeText(show.showdate ?? show.date) || showDate,
-    venueName: normalizeText(show.venue ?? show.venue_name),
-    city: normalizeText(show.city ?? show.city_name),
-    state: normalizeText(show.state ?? show.state_name) || undefined,
-    country: normalizeText(show.country ?? show.country_name) || 'US',
+    externalId: externalId || showDate,
+    showDate: normalizeText(firstRow.showdate ?? firstRow.date) || showDate,
+    venueName: normalizeText(firstRow.venuename ?? firstRow.venue ?? firstRow.venue_name),
+    city: normalizeText(firstRow.city ?? firstRow.city_name),
+    state: normalizeText(firstRow.state ?? firstRow.state_name) || undefined,
+    country: normalizeText(firstRow.country ?? firstRow.country_name) || 'US',
     tier: 'tier1_exact',
-    sets,
+    sets: buildKglwSetsFromRows(rows),
   };
 }
 
