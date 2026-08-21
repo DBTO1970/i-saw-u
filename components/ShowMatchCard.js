@@ -643,6 +643,7 @@ export default function ShowMatchCard({
 
   const startTimeFormatted = useMemo(() => formatMinutesToTime(startMinutes), [startMinutes]);
   const startTime24h = useMemo(() => formatMinutesTo24h(startMinutes), [startMinutes]);
+  const showDate = show?.date;
   const artistName = show?.artistName || 'Show';
   const isPhishShow = String(show?.provider || '').toLowerCase() === 'phishnet'
     || String(show?.artistName || '').toLowerCase() === 'phish';
@@ -705,11 +706,11 @@ export default function ShowMatchCard({
   const initialContextOverride = useMemo(
     () => buildManualTimeContextOverride(
       initialTimeContextLabel || initialCurrentSongLabel,
-      show?.date,
+      showDate,
       startTime24h,
       setlistEntries
     ),
-    [initialTimeContextLabel, initialCurrentSongLabel, show?.date, startTime24h, setlistEntries]
+    [initialTimeContextLabel, initialCurrentSongLabel, showDate, startTime24h, setlistEntries]
   );
   const effectiveTimeContext = manualTimeContextOverride || timeContext;
 
@@ -724,6 +725,19 @@ export default function ShowMatchCard({
       setSnapSongIndex(initialSnapValue);
     }
   }, [initialContextOverride]);
+
+  useEffect(() => {
+    setManualTimeContextOverride((current) => {
+      if (!current || current.label !== 'Set Break') {
+        return current;
+      }
+
+      return {
+        ...current,
+        setBreakWindow: buildSetBreakWindow(showDate, startTime24h, setlistEntries),
+      };
+    });
+  }, [showDate, setlistEntries, startTime24h]);
 
   useEffect(() => {
     if (!defaultCalibration || showStartTime !== '20:00') {
@@ -816,7 +830,7 @@ export default function ShowMatchCard({
   const phishInAudioMessage = useMemo(() => renderPhishInAudioMessage(phishInLinks), [phishInLinks]);
 
   useEffect(() => {
-    if (!show?.date || !isPhishShow) {
+    if (!showDate || !isPhishShow) {
       setPhishInLinks({
         showUrl: null,
         songUrl: null,
@@ -835,7 +849,7 @@ export default function ShowMatchCard({
       error: null,
     }));
 
-    getPhishInShowLinks({ dateString: show.date, songTitle: effectiveTimeContext?.songLabel || null })
+    getPhishInShowLinks({ dateString: showDate, songTitle: effectiveTimeContext?.songLabel || null })
       .then((result) => {
         if (!isActive) {
           return;
@@ -866,7 +880,7 @@ export default function ShowMatchCard({
     return () => {
       isActive = false;
     };
-  }, [effectiveTimeContext?.songLabel, isPhishShow, show?.date]);
+  }, [effectiveTimeContext?.songLabel, isPhishShow, showDate]);
 
   const applyAutoCalibration = () => {
     if (!defaultCalibration) {
@@ -883,6 +897,17 @@ export default function ShowMatchCard({
         ? `Calibrated from EXIF near ${defaultCalibration.matchedSongLabels?.join(' / ') || defaultCalibration.matchedSongLabel}.`
         : `Calibrated from EXIF using typical timing near ${defaultCalibration.matchedSongLabel}.`
     );
+  };
+
+  const handleShowStartTimeInputChange = (value) => {
+    setStartMinutes(parseTimeStringToMinutes(value));
+    setCalibrationSource('manual-time');
+    setCalibrationSongLabel('');
+    setCalibrationConfidence('low');
+    setCalibrationDriftMinutes(0);
+    setCalibrationBoundaryMatch(false);
+    setCalibrationBoundarySongLabels([]);
+    setSnapMessage('');
   };
 
   const handleSnapToSong = (value) => {
@@ -909,7 +934,7 @@ export default function ShowMatchCard({
       return;
     }
     if (value === 'context:set-break') {
-      const setBreakWindow = buildSetBreakWindow(show?.date, startTime24h, setlistEntries);
+      const setBreakWindow = buildSetBreakWindow(showDate, startTime24h, setlistEntries);
       setManualTimeContextOverride({
         phase: 'during',
         label: 'Set Break',
@@ -1046,7 +1071,17 @@ export default function ShowMatchCard({
               </p>
             ) : null}
 
-            <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto]">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="text-xs text-slate-300">
+                Show start time
+                <input
+                  type="time"
+                  value={startTime24h}
+                  onChange={(event) => handleShowStartTimeInputChange(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-2 text-sm text-white"
+                />
+              </label>
+
               <label className="text-xs text-slate-300">
                 Set photo context
                 <select
@@ -1071,7 +1106,7 @@ export default function ShowMatchCard({
                 type="button"
                 onClick={applyAutoCalibration}
                 disabled={!defaultCalibration}
-                className="self-end rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                className="sm:col-span-2 rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50 sm:justify-self-end"
               >
                 Auto-calibrate start time
               </button>
@@ -1189,7 +1224,7 @@ export default function ShowMatchCard({
             ) : null}
             <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
               <dt className="text-slate-500">Show start time</dt>
-              <dd className="sm:text-right">{showStartTime || '20:00'}</dd>
+              <dd className="sm:text-right">{startTime24h || '20:00'}</dd>
             </div>
             <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
               <dt className="text-slate-500">Latitude</dt>
