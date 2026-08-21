@@ -629,7 +629,7 @@ export default function ShowMatchCard({
   const [startMinutes, setStartMinutes] = useState(() => parseTimeStringToMinutes(showStartTime));
   const [snapSongIndex, setSnapSongIndex] = useState('');
   const [snapMessage, setSnapMessage] = useState('');
-  const [calibrationSource, setCalibrationSource] = useState('manual-slider');
+  const [calibrationSource, setCalibrationSource] = useState('manual-time');
   const [calibrationSongLabel, setCalibrationSongLabel] = useState('');
   const [calibrationConfidence, setCalibrationConfidence] = useState('low');
   const [calibrationDriftMinutes, setCalibrationDriftMinutes] = useState(0);
@@ -724,6 +724,19 @@ export default function ShowMatchCard({
       setSnapSongIndex(initialSnapValue);
     }
   }, [initialContextOverride]);
+
+  useEffect(() => {
+    setManualTimeContextOverride((current) => {
+      if (!current || current.label !== 'Set Break') {
+        return current;
+      }
+
+      return {
+        ...current,
+        setBreakWindow: buildSetBreakWindow(show?.date, startTime24h, setlistEntries),
+      };
+    });
+  }, [show?.date, setlistEntries, startTime24h]);
 
   useEffect(() => {
     if (!defaultCalibration || showStartTime !== '20:00') {
@@ -883,6 +896,17 @@ export default function ShowMatchCard({
         ? `Calibrated from EXIF near ${defaultCalibration.matchedSongLabels?.join(' / ') || defaultCalibration.matchedSongLabel}.`
         : `Calibrated from EXIF using typical timing near ${defaultCalibration.matchedSongLabel}.`
     );
+  };
+
+  const handleShowStartTimeInputChange = (value) => {
+    setStartMinutes(parseTimeStringToMinutes(value));
+    setCalibrationSource('manual-time');
+    setCalibrationSongLabel('');
+    setCalibrationConfidence('low');
+    setCalibrationDriftMinutes(0);
+    setCalibrationBoundaryMatch(false);
+    setCalibrationBoundarySongLabels([]);
+    setSnapMessage('');
   };
 
   const handleSnapToSong = (value) => {
@@ -1046,7 +1070,17 @@ export default function ShowMatchCard({
               </p>
             ) : null}
 
-            <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto]">
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <label className="text-xs text-slate-300">
+                Show start time
+                <input
+                  type="time"
+                  value={startTime24h}
+                  onChange={(event) => handleShowStartTimeInputChange(event.target.value)}
+                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2.5 py-2 text-sm text-white"
+                />
+              </label>
+
               <label className="text-xs text-slate-300">
                 Set photo context
                 <select
@@ -1071,7 +1105,7 @@ export default function ShowMatchCard({
                 type="button"
                 onClick={applyAutoCalibration}
                 disabled={!defaultCalibration}
-                className="self-end rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50"
+                className="sm:col-span-2 rounded-lg border border-cyan-500/50 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-50 sm:justify-self-end"
               >
                 Auto-calibrate start time
               </button>
@@ -1189,7 +1223,7 @@ export default function ShowMatchCard({
             ) : null}
             <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
               <dt className="text-slate-500">Show start time</dt>
-              <dd className="sm:text-right">{showStartTime || '20:00'}</dd>
+              <dd className="sm:text-right">{startTime24h}</dd>
             </div>
             <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
               <dt className="text-slate-500">Latitude</dt>
