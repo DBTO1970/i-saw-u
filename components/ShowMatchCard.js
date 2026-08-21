@@ -629,7 +629,7 @@ export default function ShowMatchCard({
   const [startMinutes, setStartMinutes] = useState(() => parseTimeStringToMinutes(showStartTime));
   const [snapSongIndex, setSnapSongIndex] = useState('');
   const [snapMessage, setSnapMessage] = useState('');
-  const [calibrationSource, setCalibrationSource] = useState('manual-time');
+  const [calibrationSource, setCalibrationSource] = useState('manual-slider');
   const [calibrationSongLabel, setCalibrationSongLabel] = useState('');
   const [calibrationConfidence, setCalibrationConfidence] = useState('low');
   const [calibrationDriftMinutes, setCalibrationDriftMinutes] = useState(0);
@@ -643,6 +643,7 @@ export default function ShowMatchCard({
 
   const startTimeFormatted = useMemo(() => formatMinutesToTime(startMinutes), [startMinutes]);
   const startTime24h = useMemo(() => formatMinutesTo24h(startMinutes), [startMinutes]);
+  const showDate = show?.date;
   const artistName = show?.artistName || 'Show';
   const isPhishShow = String(show?.provider || '').toLowerCase() === 'phishnet'
     || String(show?.artistName || '').toLowerCase() === 'phish';
@@ -705,11 +706,11 @@ export default function ShowMatchCard({
   const initialContextOverride = useMemo(
     () => buildManualTimeContextOverride(
       initialTimeContextLabel || initialCurrentSongLabel,
-      show?.date,
+      showDate,
       startTime24h,
       setlistEntries
     ),
-    [initialTimeContextLabel, initialCurrentSongLabel, show?.date, startTime24h, setlistEntries]
+    [initialTimeContextLabel, initialCurrentSongLabel, showDate, startTime24h, setlistEntries]
   );
   const effectiveTimeContext = manualTimeContextOverride || timeContext;
 
@@ -733,10 +734,10 @@ export default function ShowMatchCard({
 
       return {
         ...current,
-        setBreakWindow: buildSetBreakWindow(show?.date, startTime24h, setlistEntries),
+        setBreakWindow: buildSetBreakWindow(showDate, startTime24h, setlistEntries),
       };
     });
-  }, [show?.date, setlistEntries, startTime24h]);
+  }, [showDate, setlistEntries, startTime24h]);
 
   useEffect(() => {
     if (!defaultCalibration || showStartTime !== '20:00') {
@@ -829,7 +830,7 @@ export default function ShowMatchCard({
   const phishInAudioMessage = useMemo(() => renderPhishInAudioMessage(phishInLinks), [phishInLinks]);
 
   useEffect(() => {
-    if (!show?.date || !isPhishShow) {
+    if (!showDate || !isPhishShow) {
       setPhishInLinks({
         showUrl: null,
         songUrl: null,
@@ -848,7 +849,7 @@ export default function ShowMatchCard({
       error: null,
     }));
 
-    getPhishInShowLinks({ dateString: show.date, songTitle: effectiveTimeContext?.songLabel || null })
+    getPhishInShowLinks({ dateString: showDate, songTitle: effectiveTimeContext?.songLabel || null })
       .then((result) => {
         if (!isActive) {
           return;
@@ -879,7 +880,7 @@ export default function ShowMatchCard({
     return () => {
       isActive = false;
     };
-  }, [effectiveTimeContext?.songLabel, isPhishShow, show?.date]);
+  }, [effectiveTimeContext?.songLabel, isPhishShow, showDate]);
 
   const applyAutoCalibration = () => {
     if (!defaultCalibration) {
@@ -933,7 +934,7 @@ export default function ShowMatchCard({
       return;
     }
     if (value === 'context:set-break') {
-      const setBreakWindow = buildSetBreakWindow(show?.date, startTime24h, setlistEntries);
+      const setBreakWindow = buildSetBreakWindow(showDate, startTime24h, setlistEntries);
       setManualTimeContextOverride({
         phase: 'during',
         label: 'Set Break',
@@ -1223,7 +1224,7 @@ export default function ShowMatchCard({
             ) : null}
             <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
               <dt className="text-slate-500">Show start time</dt>
-              <dd className="sm:text-right">{startTime24h}</dd>
+              <dd className="sm:text-right">{startTime24h || '20:00'}</dd>
             </div>
             <div className="flex flex-col gap-1 sm:flex-row sm:justify-between sm:gap-4">
               <dt className="text-slate-500">Latitude</dt>
