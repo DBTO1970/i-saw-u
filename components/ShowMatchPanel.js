@@ -814,26 +814,29 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
         </button>
       </div>
 
-      {activeFlowStep === 0 ? (
-        <div className="space-y-4">
-          <ImageExifUploader
-              key={`image-uploader-${uploaderSessionKey}`}
-              onMetadataChange={setPhotoMetadata}
-              matchedShowDate={effectiveShow?.date || ''}
-              showStartTime={showStartTime}
-              showData={effectiveShow}
-              currentSongLabel={currentSongLabel}
-              timeContextLabel={timeContextLabel}
-              calibrationMetadata={calibrationMetadata}
-          />
+      <div className="space-y-4">
+        <ImageExifUploader
+          key={`image-uploader-${uploaderSessionKey}`}
+          onMetadataChange={setPhotoMetadata}
+          matchedShowDate={effectiveShow?.date || ''}
+          showStartTime={showStartTime}
+          showData={effectiveShow}
+          currentSongLabel={currentSongLabel}
+          timeContextLabel={timeContextLabel}
+          calibrationMetadata={calibrationMetadata}
+          showUploadControls={activeFlowStep === 0}
+          showPreviewCard
+        />
 
-          {initialSharedPhoto ? (
+        {activeFlowStep === 0 ? (
+          <>
+            {initialSharedPhoto ? (
               <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100">
                 Shared photo received from your device share sheet: <strong>{initialSharedPhoto.fileName}</strong>
               </div>
-          ) : null}
+            ) : null}
 
-          {sharedImportHistory.length > 0 ? (
+            {sharedImportHistory.length > 0 ? (
               <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3">
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Recent shared imports</p>
                 <ul className="mt-2 space-y-1 text-xs text-slate-300">
@@ -845,9 +848,10 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
                   ))}
                 </ul>
               </div>
-          ) : null}
-        </div>
-      ) : null}
+            ) : null}
+          </>
+        ) : null}
+      </div>
 
       {activeFlowStep === 1 ? (
         <div className="space-y-4">
