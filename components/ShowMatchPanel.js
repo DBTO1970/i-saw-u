@@ -329,6 +329,9 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
   const [isLoadingAutocomplete, setIsLoadingAutocomplete] = useState(false);
   const [sharedImportHistory, setSharedImportHistory] = useState([]);
   const [uploaderSessionKey, setUploaderSessionKey] = useState(0);
+  const [uploadedPreviewUrl, setUploadedPreviewUrl] = useState('');
+  const [uploadedFileName, setUploadedFileName] = useState('');
+  const uploaderRef = useRef(null);
   const [artistSelection, setArtistSelection] = useState('phish');
   const [customArtistName, setCustomArtistName] = useState('');
   const [showStartTime, setShowStartTime] = useState('20:00');
@@ -746,10 +749,16 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
   }, [overrideDate, overrideLatitude, overrideLongitude, overrideTags, overrideTime, photoMetadata, showStartTime, venueConfirmedFromShow]);
 
   const photoDerivedDate = useMemo(() => extractDateFromMetadata(effectivePhotoMetadata), [effectivePhotoMetadata]);
+  const handleUploaderPreviewChange = useCallback((previewUrl, fileName) => {
+    setUploadedPreviewUrl(previewUrl || '');
+    setUploadedFileName(fileName || '');
+  }, []);
 
   const clearCurrentPhotoAndStartOver = () => {
     suppressMissingDateMessageRef.current = true;
     setUploaderSessionKey((current) => current + 1);
+    setUploadedPreviewUrl('');
+    setUploadedFileName('');
     setPhotoMetadata(createEmptyPhotoMetadata());
     setShowResult(createEmptyShowResult());
     setShowLookupDate('');
@@ -814,40 +823,67 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
         </button>
       </div>
 
-      {activeFlowStep === 0 ? (
-        <div className="space-y-4">
-          <ImageExifUploader
-              key={`image-uploader-${uploaderSessionKey}`}
-              onMetadataChange={setPhotoMetadata}
-              matchedShowDate={effectiveShow?.date || ''}
-              showStartTime={showStartTime}
-              showData={effectiveShow}
-              currentSongLabel={currentSongLabel}
-              timeContextLabel={timeContextLabel}
-              calibrationMetadata={calibrationMetadata}
-          />
+      <div className="space-y-4">
+        <ImageExifUploader
+          ref={uploaderRef}
+          key={`image-uploader-${uploaderSessionKey}`}
+          onMetadataChange={setPhotoMetadata}
+          matchedShowDate={effectiveShow?.date || ''}
+          showStartTime={showStartTime}
+          showData={effectiveShow}
+          currentSongLabel={currentSongLabel}
+          timeContextLabel={timeContextLabel}
+          calibrationMetadata={calibrationMetadata}
+          showUploadControls={activeFlowStep === 0}
+          showPreviewCard={activeFlowStep === 0}
+          onPreviewChange={handleUploaderPreviewChange}
+        />
 
-          {initialSharedPhoto ? (
-              <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100">
-                Shared photo received from your device share sheet: <strong>{initialSharedPhoto.fileName}</strong>
+        {uploadedPreviewUrl && activeFlowStep !== 0 ? (
+          <div className="overflow-hidden rounded-3xl border border-slate-800 bg-slate-900/70 shadow-xl shadow-slate-950/30">
+            <div className="flex items-center justify-between gap-2 border-b border-slate-800 p-4">
+              <div>
+                <p className="text-sm font-medium text-slate-300">Preview</p>
+                <p className="text-xs text-slate-500">{uploadedFileName}</p>
               </div>
-          ) : null}
+            </div>
+            <div className="p-3 sm:p-6">
+              <div className="mx-auto w-full max-w-3xl overflow-hidden rounded-2xl bg-slate-950/80 p-2">
+                <img src={uploadedPreviewUrl} alt="Uploaded preview" className="h-auto w-full rounded-xl object-contain" />
+              </div>
+              <div className="mt-4 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => uploaderRef.current?.saveToLibrary?.()}
+                  className="flex w-full items-center justify-center space-x-2 rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-4 py-2.5 text-xs font-semibold text-cyan-300 transition-all hover:border-cyan-400 hover:bg-cyan-500/20 sm:w-auto"
+                >
+                  <span>Save Photo to Library</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
-          {sharedImportHistory.length > 0 ? (
-              <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3">
-                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Recent shared imports</p>
-                <ul className="mt-2 space-y-1 text-xs text-slate-300">
-                  {sharedImportHistory.map((entry, index) => (
-                    <li key={`${entry.fileName}-${entry.receivedAt}-${index}`} className="flex items-center justify-between gap-2">
-                      <span className="truncate">{entry.fileName}</span>
-                      <span className="text-slate-500">{formatSharedImportTimestamp(entry.receivedAt)}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-          ) : null}
-        </div>
-      ) : null}
+        {activeFlowStep === 0 && initialSharedPhoto ? (
+          <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100">
+            Shared photo received from your device share sheet: <strong>{initialSharedPhoto.fileName}</strong>
+          </div>
+        ) : null}
+
+        {activeFlowStep === 0 && sharedImportHistory.length > 0 ? (
+          <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3">
+            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Recent shared imports</p>
+            <ul className="mt-2 space-y-1 text-xs text-slate-300">
+              {sharedImportHistory.map((entry, index) => (
+                <li key={`${entry.fileName}-${entry.receivedAt}-${index}`} className="flex items-center justify-between gap-2">
+                  <span className="truncate">{entry.fileName}</span>
+                  <span className="text-slate-500">{formatSharedImportTimestamp(entry.receivedAt)}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
 
       {activeFlowStep === 1 ? (
         <div className="space-y-4">

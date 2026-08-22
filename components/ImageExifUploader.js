@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import ExifReader from 'exifreader';
 import { processPhotoForUpload } from '../lib/image-optimizer';
 import { capturePhotoWithNativeCamera } from '../lib/native-camera-photo';
@@ -710,7 +710,7 @@ async function parseSidecarFile(file) {
   return sidecar;
 }
 
-export default function ImageExifUploader({
+const ImageExifUploader = forwardRef(function ImageExifUploader({
   onMetadataChange,
   matchedShowDate = '',
   showStartTime = '',
@@ -718,7 +718,10 @@ export default function ImageExifUploader({
   currentSongLabel = '',
   timeContextLabel = '',
   calibrationMetadata = null,
-}) {
+  showUploadControls = true,
+  showPreviewCard = true,
+  onPreviewChange,
+}, ref) {
   const [previewUrl, setPreviewUrl] = useState('');
   const [selectedFileName, setSelectedFileName] = useState('');
   const [selectedSidecarFileName, setSelectedSidecarFileName] = useState('');
@@ -1000,6 +1003,7 @@ export default function ImageExifUploader({
     previewUrlRef.current = nextPreviewUrl;
     setPreviewUrl(nextPreviewUrl);
     setSelectedFileName(file.name);
+    onPreviewChange?.(nextPreviewUrl, file.name);
     setIsParsing(true);
     setError('');
 
@@ -1234,54 +1238,60 @@ export default function ImageExifUploader({
     { label: 'Longitude', value: metadata.gpsLongitude },
   ], [metadata]);
 
+  useImperativeHandle(ref, () => ({
+    saveToLibrary: handleSaveToLibrary,
+    getPreviewState: () => ({ previewUrl, fileName: selectedFileName }),
+  }), [handleSaveToLibrary, previewUrl, selectedFileName]);
+
   return (
     <div className="space-y-6">
-      <div
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        onDrop={onDrop}
-        className={`rounded-3xl border-2 border-dashed p-5 text-center transition sm:p-8 ${isDragging ? 'border-cyan-400 bg-cyan-500/10' : 'border-slate-700 bg-slate-950/70'}`}
-      >
-        <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={onInputChange} />
-        <div className="mx-auto flex max-w-xl flex-col items-center gap-3 sm:gap-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-cyan-500/20 text-cyan-300 sm:h-14 sm:w-14">
-            <svg viewBox="0 0 24 24" className="h-7 w-7 sm:h-8 sm:w-8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M4 16l4-4 3 3 5-6 4 5" />
-              <rect x="3" y="4" width="18" height="16" rx="2" />
-            </svg>
-          </div>
-          <div className="space-y-2">
-            <p className="text-base font-semibold text-white sm:text-lg">Drop an image here</p>
-            <p className="text-sm text-slate-400">or</p>
-          </div>
-          <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
-            <button
-              type="button"
-              onClick={() => inputRef.current?.click()}
-              className="w-full rounded-full bg-cyan-500 px-5 py-2.5 text-sm font-medium text-slate-950 transition hover:bg-cyan-400 sm:w-auto"
-            >
-              Select image file
-            </button>
-            <button
-              type="button"
-              onClick={handleCaptureWithCamera}
-              disabled={isCapturingPhoto}
-              className="w-full rounded-full border border-cyan-400/40 bg-cyan-500/10 px-5 py-2.5 text-sm font-medium text-cyan-200 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
-            >
-              {isCapturingPhoto ? 'Opening camera...' : 'Take photo with camera'}
-            </button>
-          </div>
-          <input
-            ref={sidecarInputRef}
-            type="file"
-            accept=".json,.xmp,.xml,.txt,application/json,application/xml,text/xml,text/plain"
-            className="hidden"
-            onChange={onSidecarInputChange}
-          />
-          <details className="w-full max-w-md rounded-xl border border-slate-700/80 bg-slate-900/50 px-3 py-2 text-left">
-            <summary className="cursor-pointer text-xs font-medium text-slate-300">
-              Advanced: load sidecar metadata (only if embedded metadata is missing)
-            </summary>
+      {showUploadControls ? (
+        <div
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+          onDrop={onDrop}
+          className={`rounded-3xl border-2 border-dashed p-5 text-center transition sm:p-8 ${isDragging ? 'border-cyan-400 bg-cyan-500/10' : 'border-slate-700 bg-slate-950/70'}`}
+        >
+          <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={onInputChange} />
+          <div className="mx-auto flex max-w-xl flex-col items-center gap-3 sm:gap-4">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-cyan-500/20 text-cyan-300 sm:h-14 sm:w-14">
+              <svg viewBox="0 0 24 24" className="h-7 w-7 sm:h-8 sm:w-8" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M4 16l4-4 3 3 5-6 4 5" />
+                <rect x="3" y="4" width="18" height="16" rx="2" />
+              </svg>
+            </div>
+            <div className="space-y-2">
+              <p className="text-base font-semibold text-white sm:text-lg">Drop an image here</p>
+              <p className="text-sm text-slate-400">or</p>
+            </div>
+            <div className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row">
+              <button
+                type="button"
+                onClick={() => inputRef.current?.click()}
+                className="w-full rounded-full bg-cyan-500 px-5 py-2.5 text-sm font-medium text-slate-950 transition hover:bg-cyan-400 sm:w-auto"
+              >
+                Select image file
+              </button>
+              <button
+                type="button"
+                onClick={handleCaptureWithCamera}
+                disabled={isCapturingPhoto}
+                className="w-full rounded-full border border-cyan-400/40 bg-cyan-500/10 px-5 py-2.5 text-sm font-medium text-cyan-200 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-60 sm:w-auto"
+              >
+                {isCapturingPhoto ? 'Opening camera...' : 'Take photo with camera'}
+              </button>
+            </div>
+            <input
+              ref={sidecarInputRef}
+              type="file"
+              accept=".json,.xmp,.xml,.txt,application/json,application/xml,text/xml,text/plain"
+              className="hidden"
+              onChange={onSidecarInputChange}
+            />
+            <details className="w-full max-w-md rounded-xl border border-slate-700/80 bg-slate-900/50 px-3 py-2 text-left">
+              <summary className="cursor-pointer text-xs font-medium text-slate-300">
+                Advanced: load sidecar metadata (only if embedded metadata is missing)
+              </summary>
             <div className="mt-2 space-y-2">
               <p className="text-xs text-slate-400">
                 Most photos should work without this. Use sidecar files only when cloud exports separate metadata from the image bytes.
@@ -1300,6 +1310,7 @@ export default function ImageExifUploader({
           ) : null}
         </div>
       </div>
+      ) : null}
 
       {isParsing && (
         <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 text-sm text-slate-300">
@@ -1319,7 +1330,7 @@ export default function ImageExifUploader({
         </div>
       )}
 
-      {previewUrl && (
+      {showPreviewCard && previewUrl && (
         <div className="overflow-hidden rounded-3xl border border-slate-800 bg-slate-900/70 shadow-xl shadow-slate-950/30">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 p-4">
             <div>
@@ -1368,7 +1379,7 @@ export default function ImageExifUploader({
         </div>
       )}
 
-      {previewUrl && (
+      {showPreviewCard && previewUrl && (
         <details className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-300">
           <summary className="cursor-pointer font-medium text-white">Metadata diagnostics</summary>
           <div className="mt-3 space-y-3">
@@ -1445,4 +1456,6 @@ export default function ImageExifUploader({
       )}
     </div>
   );
-}
+});
+
+export default ImageExifUploader;
