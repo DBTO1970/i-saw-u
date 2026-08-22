@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { createClient } from '../lib/supabase/client';
+import { hasSupabaseConfig } from '../lib/supabase/config';
 import Link from 'next/link';
 import AccountCleanupControls from './AccountCleanupControls';
 
@@ -17,7 +18,8 @@ export default function UserNav() {
   const [isAcceptingTerms, setIsAcceptingTerms] = useState(false);
   const [termsError, setTermsError] = useState('');
 
-  const supabase = createClient();
+  const supabaseConfigured = hasSupabaseConfig();
+  const supabase = supabaseConfigured ? createClient() : null;
 
   const resolveAppOrigin = () => {
     const configured = (process.env.NEXT_PUBLIC_APP_URL || '').trim();
@@ -28,6 +30,12 @@ export default function UserNav() {
   };
 
   useEffect(() => {
+    if (!supabaseConfigured || !supabase) {
+      setLoading(false);
+      setProfileLoaded(true);
+      return;
+    }
+
     async function loadUserAndProfile(sessionUser = null) {
       const nextUser = sessionUser || (await supabase.auth.getUser()).data?.user || null;
       setUser(nextUser);
@@ -58,9 +66,14 @@ export default function UserNav() {
     return () => {
       subscription.unsubscribe();
     };
-  }, []);
+  }, [supabase, supabaseConfigured]);
 
   const handleOAuthLogin = async (provider) => {
+    if (!supabaseConfigured || !supabase) {
+      alert('Authentication is unavailable because the Supabase environment is not configured.');
+      return;
+    }
+
     const redirectTo = `${resolveAppOrigin()}/auth/callback`;
 
     const { error } = await supabase.auth.signInWithOAuth({
@@ -78,6 +91,10 @@ export default function UserNav() {
   };
 
   const handleSignOut = async () => {
+    if (!supabase) {
+      return;
+    }
+
     await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
@@ -117,6 +134,14 @@ export default function UserNav() {
 
   if (loading) {
     return <div className="h-9 w-24 animate-pulse rounded-xl bg-slate-800/80" />;
+  }
+
+  if (!supabaseConfigured) {
+    return (
+      <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-200">
+        Authentication unavailable until Supabase is configured.
+      </div>
+    );
   }
 
   if (!user) {
