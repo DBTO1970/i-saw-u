@@ -1292,24 +1292,24 @@ const ImageExifUploader = forwardRef(function ImageExifUploader({
               <summary className="cursor-pointer text-xs font-medium text-slate-300">
                 Advanced: load sidecar metadata (only if embedded metadata is missing)
               </summary>
-            <div className="mt-2 space-y-2">
-              <p className="text-xs text-slate-400">
-                Most photos should work without this. Use sidecar files only when cloud exports separate metadata from the image bytes.
-              </p>
-              <button
-                type="button"
-                onClick={() => sidecarInputRef.current?.click()}
-                className="w-full rounded-full border border-slate-600 px-4 py-2 text-xs font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-900 sm:w-auto"
-              >
-                Select sidecar file (optional)
-              </button>
-            </div>
-          </details>
-          {selectedSidecarFileName ? (
-            <p className="text-xs text-slate-400">Sidecar loaded: {selectedSidecarFileName}</p>
-          ) : null}
+              <div className="mt-2 space-y-2">
+                <p className="text-xs text-slate-400">
+                  Most photos should work without this. Use sidecar files only when cloud exports separate metadata from the image bytes.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => sidecarInputRef.current?.click()}
+                  className="w-full rounded-full border border-slate-600 px-4 py-2 text-xs font-medium text-slate-200 transition hover:border-slate-500 hover:bg-slate-900 sm:w-auto"
+                >
+                  Select sidecar file (optional)
+                </button>
+              </div>
+            </details>
+            {selectedSidecarFileName ? (
+              <p className="text-xs text-slate-400">Sidecar loaded: {selectedSidecarFileName}</p>
+            ) : null}
+          </div>
         </div>
-      </div>
       ) : null}
 
       {isParsing && (
@@ -1349,14 +1349,15 @@ const ImageExifUploader = forwardRef(function ImageExifUploader({
 
           <div className="p-3 sm:p-6">
            <div className="mx-auto w-full max-w-3xl overflow-hidden rounded-2xl bg-slate-950/80 p-2">
-              <img 
-                src={previewUrl} 
-                alt="Uploaded preview" 
-                className="h-auto w-full rounded-xl object-contain" 
+             <img
+               src={previewUrl}
+               alt="Uploaded preview"
+               className="h-auto w-full rounded-xl object-contain"
               />
             </div>
            <div className="mt-4 flex justify-center">
              <button
+               type="button"
                onClick={handleSaveToLibrary}
                disabled={isSaving}
                className="flex w-full items-center justify-center space-x-2 rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-4 py-2.5 text-xs font-semibold text-cyan-300 transition-all hover:border-cyan-400 hover:bg-cyan-500/20 disabled:opacity-50 sm:w-auto"
@@ -1370,13 +1371,13 @@ const ImageExifUploader = forwardRef(function ImageExifUploader({
            <div className="mt-4 grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-3 sm:mt-6 sm:gap-4 sm:p-4 sm:grid-cols-2 lg:grid-cols-4">
              {infoRows.map((row) => (
                <div key={row.label} className="rounded-2xl bg-slate-900/80 p-3 sm:p-4">
-                  <p className="text-xs uppercase tracking-[0.24em] text-slate-500">{row.label}</p>
-                  <p className="mt-2 text-sm font-medium text-white">{row.value}</p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
+                 <p className="text-xs uppercase tracking-[0.24em] text-slate-500">{row.label}</p>
+                 <p className="mt-2 text-sm font-medium text-white">{row.value}</p>
+               </div>
+             ))}
+           </div>
+         </div>
+       </div>
       )}
 
       {showPreviewCard && previewUrl && (

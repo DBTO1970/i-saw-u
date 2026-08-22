@@ -864,24 +864,28 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
           </div>
         ) : null}
 
-        {activeFlowStep === 0 && initialSharedPhoto ? (
-          <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100">
-            Shared photo received from your device share sheet: <strong>{initialSharedPhoto.fileName}</strong>
-          </div>
-        ) : null}
+        {activeFlowStep === 0 ? (
+          <>
+            {initialSharedPhoto ? (
+              <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-100">
+                Shared photo received from your device share sheet: <strong>{initialSharedPhoto.fileName}</strong>
+              </div>
+            ) : null}
 
-        {activeFlowStep === 0 && sharedImportHistory.length > 0 ? (
-          <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Recent shared imports</p>
-            <ul className="mt-2 space-y-1 text-xs text-slate-300">
-              {sharedImportHistory.map((entry, index) => (
-                <li key={`${entry.fileName}-${entry.receivedAt}-${index}`} className="flex items-center justify-between gap-2">
-                  <span className="truncate">{entry.fileName}</span>
-                  <span className="text-slate-500">{formatSharedImportTimestamp(entry.receivedAt)}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
+            {sharedImportHistory.length > 0 ? (
+              <div className="rounded-2xl border border-slate-800 bg-slate-950/70 px-4 py-3">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-400">Recent shared imports</p>
+                <ul className="mt-2 space-y-1 text-xs text-slate-300">
+                  {sharedImportHistory.map((entry, index) => (
+                    <li key={`${entry.fileName}-${entry.receivedAt}-${index}`} className="flex items-center justify-between gap-2">
+                      <span className="truncate">{entry.fileName}</span>
+                      <span className="text-slate-500">{formatSharedImportTimestamp(entry.receivedAt)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </>
         ) : null}
       </div>
 
