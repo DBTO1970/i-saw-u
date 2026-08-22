@@ -1353,7 +1353,7 @@ export default function ImageExifUploader({
                <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4" />
                </svg>
-               <span>{isSaving ? 'Optimizing & Saving...' : 'Save WebP to Library'}</span>
+               <span>{isSaving ? 'Optimizing & Saving...' : 'Save Photo to Library'}</span>
              </button>
            </div>
            <div className="mt-4 grid gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 p-3 sm:mt-6 sm:gap-4 sm:p-4 sm:grid-cols-2 lg:grid-cols-4">
