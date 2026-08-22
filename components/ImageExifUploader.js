@@ -721,6 +721,7 @@ const ImageExifUploader = forwardRef(function ImageExifUploader({
   showUploadControls = true,
   showPreviewCard = true,
   onPreviewChange,
+  onSaveResult,
 }, ref) {
   const [previewUrl, setPreviewUrl] = useState('');
   const [selectedFileName, setSelectedFileName] = useState('');
@@ -741,7 +742,9 @@ const ImageExifUploader = forwardRef(function ImageExifUploader({
 
   const handleSaveToLibrary = async () => {
     if (!lastImageFileRef.current) {
-      return;
+      const result = { success: false, message: 'No photo selected.' };
+      onSaveResult?.(result);
+      return result;
     }
 
     const sourceFile = lastImageFileRef.current;
@@ -947,22 +950,36 @@ const ImageExifUploader = forwardRef(function ImageExifUploader({
           responseType: typeof res,
           responseKeys: res && typeof res === 'object' ? Object.keys(res).slice(0, 10) : [],
         });
-        setSaveMessage({ type: 'error', text: 'Save did not complete correctly. Please try again.' });
-        return;
+        const result = { success: false, message: 'Save did not complete correctly. Please try again.' };
+        setSaveMessage({ type: 'error', text: result.message });
+        onSaveResult?.(result);
+        return result;
       }
 
       if (res.success) {
-        setSaveMessage({ type: 'success', text: 'Saved to your personal library!' });
+        const successMessage = 'Saved to your personal library!';
+        setSaveMessage({ type: 'success', text: successMessage });
+        const result = { success: true, message: successMessage };
+        onSaveResult?.(result);
+        return result;
       } else {
         logSavePipelineDiagnostic('upload-failed', sourceFile, {
           phase: 'api-result',
           status: response.status,
           apiError: res.error || null,
         });
-        setSaveMessage({ type: 'error', text: res.error || 'Failed to save photo.' });
+        const errorMessage = res.error || 'Failed to save photo.';
+        setSaveMessage({ type: 'error', text: errorMessage });
+        const result = { success: false, message: errorMessage };
+        onSaveResult?.(result);
+        return result;
       }
     } catch (err) {
-      setSaveMessage({ type: 'error', text: err.message || 'Error converting/uploading image.' });
+      const errorMessage = err.message || 'Error converting/uploading image.';
+      setSaveMessage({ type: 'error', text: errorMessage });
+      const result = { success: false, message: errorMessage };
+      onSaveResult?.(result);
+      return result;
     } finally {
       setIsSaving(false);
     }

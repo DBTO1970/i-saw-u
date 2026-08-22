@@ -331,6 +331,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
   const [uploaderSessionKey, setUploaderSessionKey] = useState(0);
   const [uploadedPreviewUrl, setUploadedPreviewUrl] = useState('');
   const [uploadedFileName, setUploadedFileName] = useState('');
+  const [saveStatus, setSaveStatus] = useState(null);
   const uploaderRef = useRef(null);
   const [artistSelection, setArtistSelection] = useState('phish');
   const [customArtistName, setCustomArtistName] = useState('');
@@ -754,11 +755,34 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
     setUploadedFileName(fileName || '');
   }, []);
 
+  const handleUploaderSaveResult = useCallback((result) => {
+    if (!result) {
+      return;
+    }
+
+    setSaveStatus(result.success
+      ? { type: 'success', text: result.message || 'Saved to your personal library!' }
+      : { type: 'error', text: result.message || 'Failed to save photo.' });
+  }, []);
+
+  const handleReviewCompleteSave = useCallback(async () => {
+    const result = await uploaderRef.current?.saveToLibrary?.();
+    if (!result) {
+      setSaveStatus({ type: 'error', text: 'No photo selected to save.' });
+      return;
+    }
+
+    setSaveStatus(result.success
+      ? { type: 'success', text: result.message || 'Saved to your personal library!' }
+      : { type: 'error', text: result.message || 'Failed to save photo.' });
+  }, []);
+
   const clearCurrentPhotoAndStartOver = () => {
     suppressMissingDateMessageRef.current = true;
     setUploaderSessionKey((current) => current + 1);
     setUploadedPreviewUrl('');
     setUploadedFileName('');
+    setSaveStatus(null);
     setPhotoMetadata(createEmptyPhotoMetadata());
     setShowResult(createEmptyShowResult());
     setShowLookupDate('');
@@ -837,9 +861,10 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
           showUploadControls={activeFlowStep === 0}
           showPreviewCard={activeFlowStep === 0}
           onPreviewChange={handleUploaderPreviewChange}
+          onSaveResult={handleUploaderSaveResult}
         />
 
-        {uploadedPreviewUrl && activeFlowStep !== 0 ? (
+        {uploadedPreviewUrl && activeFlowStep !== 0 && activeFlowStep !== flowSteps.length - 1 ? (
           <div className="overflow-hidden rounded-3xl border border-slate-800 bg-slate-900/70 shadow-xl shadow-slate-950/30">
             <div className="flex items-center justify-between gap-2 border-b border-slate-800 p-4">
               <div>
@@ -854,10 +879,10 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
               <div className="mt-4 flex justify-center">
                 <button
                   type="button"
-                  onClick={() => uploaderRef.current?.saveToLibrary?.()}
+                  onClick={() => void handleReviewCompleteSave()}
                   className="flex w-full items-center justify-center space-x-2 rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-4 py-2.5 text-xs font-semibold text-cyan-300 transition-all hover:border-cyan-400 hover:bg-cyan-500/20 sm:w-auto"
                 >
-                  <span>Save Photo to Library</span>
+                  <span>Review Complete - Save</span>
                 </button>
               </div>
             </div>
@@ -886,6 +911,16 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
               </div>
             ) : null}
           </>
+        ) : null}
+
+        {saveStatus ? (
+          <div className={`rounded-2xl border px-4 py-3 text-sm font-medium ${
+            saveStatus.type === 'success'
+              ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
+              : 'border-rose-500/40 bg-rose-500/10 text-rose-200'
+          }`}>
+            {saveStatus.text}
+          </div>
         ) : null}
       </div>
 
@@ -1190,11 +1225,11 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
         </span>
         <button
           type="button"
-          onClick={advanceFlow}
-          disabled={!canMoveForward}
+          onClick={activeFlowStep === flowSteps.length - 1 ? handleReviewCompleteSave : advanceFlow}
+          disabled={activeFlowStep === flowSteps.length - 1 ? false : !canMoveForward}
           className="rounded-lg bg-cyan-500 px-3 py-2 text-sm font-medium text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {activeFlowStep === flowSteps.length - 1 ? 'Review complete' : 'Next'}
+          {activeFlowStep === flowSteps.length - 1 ? 'Review Complete - Save' : 'Next'}
         </button>
       </div>
 
