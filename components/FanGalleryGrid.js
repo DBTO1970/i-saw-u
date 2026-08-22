@@ -2,10 +2,62 @@
 
 import { useMemo, useState } from 'react';
 import PhotoLikeButton from './PhotoLikeButton';
+import { deriveCurrentSongLabelFromShowMetadata } from '../lib/photo-show-context';
+
+function getRawExif(photo) {
+  if (!photo?.raw_exif) {
+    return {};
+  }
+  if (typeof photo.raw_exif === 'string') {
+    try {
+      return JSON.parse(photo.raw_exif) || {};
+    } catch {
+      return {};
+    }
+  }
+  if (typeof photo.raw_exif === 'object' && !Array.isArray(photo.raw_exif)) {
+    return photo.raw_exif;
+  }
+  return {};
+}
+
+function getPhotoSongTitle(photo) {
+  const rawExif = getRawExif(photo);
+  const showMetadata = rawExif?.showMetadata && typeof rawExif.showMetadata === 'object' ? rawExif.showMetadata : {};
+  const resolvedFromMetadata = deriveCurrentSongLabelFromShowMetadata(showMetadata, rawExif);
+  const candidates = [
+    resolvedFromMetadata,
+    rawExif.song,
+    photo?.currentSong,
+    photo?.songTitle,
+    photo?.song_title,
+  ];
+  for (const candidate of candidates) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      return candidate.trim();
+    }
+  }
+  return '';
+}
+
+function getPhotoSortKey(photo) {
+  const rawExif = getRawExif(photo);
+  const showMetadata = rawExif?.showMetadata && typeof rawExif.showMetadata === 'object' ? rawExif.showMetadata : {};
+  const date = photo?.date_taken || showMetadata.dateTimeOriginal || rawExif.dateTimeOriginal || '';
+  const time = photo?.time_taken || showMetadata.timeTaken || rawExif.timeTaken || '';
+  if (date && time) {
+    return `${date} ${time}`;
+  }
+  if (date) {
+    return date;
+  }
+  return photo?.created_at || '';
+}
 
 export default function FanGalleryGrid({ photos = [], currentUserId = null }) {
   const [selectedPhoto, setSelectedPhoto] = useState(null);
   const [failedThumbs, setFailedThumbs] = useState(new Set());
+  const selectedPhotoSongTitle = useMemo(() => (selectedPhoto ? getPhotoSongTitle(selectedPhoto) : ''), [selectedPhoto]);
 
   function handleThumbError(photoId) {
     setFailedThumbs((prev) => {
@@ -14,15 +66,22 @@ export default function FanGalleryGrid({ photos = [], currentUserId = null }) {
       return next;
     });
   }
-  const visiblePhotos = useMemo(
-    () => photos.filter((photo) => !currentUserId || photo.user_id !== currentUserId),
-    [photos, currentUserId]
-  );
+  const visiblePhotos = useMemo(() => {
+    const filtered = photos.filter((photo) => !currentUserId || photo.user_id !== currentUserId);
+    return [...filtered].sort((a, b) => {
+      const keyA = getPhotoSortKey(a);
+      const keyB = getPhotoSortKey(b);
+      if (keyA < keyB) return -1;
+      if (keyA > keyB) return 1;
+      return 0;
+    });
+  }, [photos, currentUserId]);
 
   return (
     <>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
         {visiblePhotos.map((photo) => {
+          const songTitle = getPhotoSongTitle(photo);
           return (
             <button
               key={photo.id}
@@ -46,6 +105,11 @@ export default function FanGalleryGrid({ photos = [], currentUserId = null }) {
                   Photo unavailable
                 </div>
               )}
+              {songTitle ? (
+                <div className="px-2 pb-1 pt-1.5">
+                  <p className="truncate text-xs font-semibold text-cyan-300">{songTitle}</p>
+                </div>
+              ) : null}
               {/* Like badge on thumbnail */}
               <div className="absolute bottom-1.5 right-1.5" onClick={(e) => e.stopPropagation()}>
                 <PhotoLikeButton
@@ -67,7 +131,12 @@ export default function FanGalleryGrid({ photos = [], currentUserId = null }) {
         >
           <div className="w-full max-w-5xl rounded-2xl border border-slate-700 bg-slate-950/95 shadow-2xl shadow-black/60">
             <div className="flex items-center justify-between gap-3 border-b border-slate-800 px-4 py-3">
-              <p className="text-sm font-semibold text-white">Fan gallery</p>
+              <div>
+                <p className="text-sm font-semibold text-white">Fan gallery</p>
+                {selectedPhotoSongTitle ? (
+                  <p className="text-xs font-semibold text-cyan-300">{selectedPhotoSongTitle}</p>
+                ) : null}
+              </div>
               <div className="flex items-center gap-3" onClick={(e) => e.stopPropagation()}>
                 <PhotoLikeButton
                   photoId={selectedPhoto.id}
