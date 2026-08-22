@@ -355,6 +355,40 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
   const displayArtistName = selectedArtistName || (artistSelection === 'other' ? 'Other Artist' : 'Phish');
   const supplementalTimeValue = overrideTime || extractTimeForTimeInput(photoMetadata);
   const lookupPhotoDate = overrideDate || extractDateFromMetadata(photoMetadata) || activeDate || '';
+  const effectiveShow = useMemo(() => {
+    const baseShow = suggestedShow ? { ...suggestedShow } : {};
+
+    if (overrideVenueName.trim()) {
+      baseShow.venueName = overrideVenueName.trim();
+    }
+    if (overrideCity.trim()) {
+      baseShow.city = overrideCity.trim();
+    }
+    if (overrideState.trim()) {
+      baseShow.state = overrideState.trim();
+    }
+
+    const manualLat = parseCoordinateNumber(overrideLatitude);
+    const manualLon = parseCoordinateNumber(overrideLongitude);
+    if (manualLat !== null) {
+      baseShow.latitude = manualLat;
+    }
+    if (manualLon !== null) {
+      baseShow.longitude = manualLon;
+    }
+
+    if (overrideDate.trim()) {
+      baseShow.date = overrideDate.trim();
+    } else if (!baseShow.date && activeDate) {
+      baseShow.date = activeDate;
+    }
+
+    if (!baseShow.venueName && !baseShow.city && !baseShow.state && !baseShow.date) {
+      return null;
+    }
+
+    return baseShow;
+  }, [activeDate, overrideCity, overrideDate, overrideLatitude, overrideLongitude, overrideState, overrideVenueName, suggestedShow]);
   const flowSteps = [
     { id: 'photo', label: 'Photo', description: 'Upload & review metadata' },
     { id: 'artist', label: 'Artist', description: 'Choose the artist' },
@@ -662,41 +696,6 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
     setActiveDate(dateFromMetadata);
     setOverrideDate((current) => current || dateFromMetadata);
   }, [photoMetadata]);
-
-  const effectiveShow = useMemo(() => {
-    const baseShow = suggestedShow ? { ...suggestedShow } : {};
-
-    if (overrideVenueName.trim()) {
-      baseShow.venueName = overrideVenueName.trim();
-    }
-    if (overrideCity.trim()) {
-      baseShow.city = overrideCity.trim();
-    }
-    if (overrideState.trim()) {
-      baseShow.state = overrideState.trim();
-    }
-
-    const manualLat = parseCoordinateNumber(overrideLatitude);
-    const manualLon = parseCoordinateNumber(overrideLongitude);
-    if (manualLat !== null) {
-      baseShow.latitude = manualLat;
-    }
-    if (manualLon !== null) {
-      baseShow.longitude = manualLon;
-    }
-
-    if (overrideDate.trim()) {
-      baseShow.date = overrideDate.trim();
-    } else if (!baseShow.date && activeDate) {
-      baseShow.date = activeDate;
-    }
-
-    if (!baseShow.venueName && !baseShow.city && !baseShow.state && !baseShow.date) {
-      return null;
-    }
-
-    return baseShow;
-  }, [activeDate, overrideCity, overrideDate, overrideLatitude, overrideLongitude, overrideState, overrideVenueName, suggestedShow]);
 
   const effectivePhotoMetadata = useMemo(() => {
     const next = { ...photoMetadata };

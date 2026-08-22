@@ -2,9 +2,46 @@ import { createServerClient } from '@supabase/ssr';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 import { cookies } from 'next/headers';
 import { Database } from './types';
-import { getSupabasePublicKey, getSupabaseServiceRoleKey, getSupabaseUrl } from './config';
+import { getSupabasePublicKey, getSupabaseServiceRoleKey, getSupabaseUrl, hasSupabaseConfig } from './config';
+
+function createFallbackClient() {
+  const emptyQuery = () => ({
+    select: () => emptyQuery(),
+    eq: () => emptyQuery(),
+    single: async () => ({ data: null, error: null }),
+    maybeSingle: async () => ({ data: null, error: null }),
+    update: () => emptyQuery(),
+    insert: () => emptyQuery(),
+    delete: () => emptyQuery(),
+  });
+
+  return {
+    auth: {
+      getUser: async () => ({ data: { user: null }, error: null }),
+      signInWithOAuth: async () => ({ data: null, error: null }),
+      signOut: async () => ({ error: null }),
+    },
+    from: () => ({
+      select: () => emptyQuery(),
+      update: () => emptyQuery(),
+      insert: () => emptyQuery(),
+      delete: () => emptyQuery(),
+    }),
+    storage: {
+      from: () => ({
+        upload: async () => ({ data: null, error: new Error('Supabase is not configured.') }),
+        remove: async () => ({ data: null, error: null }),
+        getPublicUrl: () => ({ data: { publicUrl: '' }, error: null }),
+      }),
+    },
+  };
+}
 
 export function createClient() {
+  if (!hasSupabaseConfig()) {
+    return createFallbackClient();
+  }
+
   const cookieStore = cookies();
 
   return createServerClient<Database>(
