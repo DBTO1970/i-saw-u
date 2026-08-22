@@ -4,6 +4,7 @@ import { useMemo } from 'react';
 import Link from 'next/link';
 import { groupShowsByYear } from '../lib/show-grouping';
 import { useSortedList } from '../lib/useSortedList';
+import { getShowSourceLink } from '../lib/show-source-links';
 
 type BookmarkedShow = Record<string, unknown>;
 type MappedShow = BookmarkedShow & { exifShowDate: string | null; dateSaved: string | null };
@@ -52,11 +53,12 @@ export default function BookmarkedShowsPanel({ shows, showsError }: BookmarkedSh
     const artistName = (showData?.artistName as string | undefined)
       || (showData?.artist_name as string | undefined)
       || 'Show';
-    const phishNetUrl =
-      showData?.phishNetUrl ||
-      (show.show_date
-        ? `https://phish.net/setlists/?d=${encodeURIComponent(show.show_date as string)}`
-        : null);
+    const sourceLink = getShowSourceLink({
+      showData: showData || {},
+      showDate: show.show_date as string | undefined,
+      provider: showData?.provider as string | undefined,
+      artistName,
+    });
     return (
       <div key={show.id as string} className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/70 transition-all hover:border-cyan-500/40">
         <Link href={`/library/show/${show.show_date as string}`} className="block p-5">
@@ -76,10 +78,10 @@ export default function BookmarkedShowsPanel({ shows, showsError }: BookmarkedSh
             </p>
           ) : null}
         </Link>
-        {phishNetUrl ? (
+        {sourceLink?.url ? (
           <div className="border-t border-slate-800 px-5 py-3">
-            <a href={phishNetUrl as string} target="_blank" rel="noreferrer" className="text-xs font-medium text-cyan-400 underline hover:text-cyan-300">
-              Open on phish.net ↗
+            <a href={sourceLink.url} target="_blank" rel="noreferrer" className="text-xs font-medium text-cyan-400 underline hover:text-cyan-300">
+              Open on {sourceLink.label} ↗
             </a>
           </div>
         ) : null}

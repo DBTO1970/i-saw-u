@@ -5,6 +5,7 @@ import { getPhishInShowLinks } from '../app/actions/shows';
 import { saveShowToLibrary, removeShowFromLibraryByDate } from '../app/actions/user-library';
 import { buildSetlistSongTimeline, calibrateShowStartTime } from '../lib/show-start-time-calibration';
 import { normalizeTimeContextLabel } from '../lib/photo-show-context';
+import { getShowSourceLink } from '../lib/show-source-links';
 
 function toRadians(value) {
   return (value * Math.PI) / 180;
@@ -812,7 +813,18 @@ export default function ShowMatchCard({
           city: show.city,
           state: show.state,
           location: [show.city, show.state].filter(Boolean).join(', '),
+          date: show.date,
+          provider: show.provider || null,
+          artistName: show.artistName || null,
+          providerTier: show.providerTier || null,
+          setlistEstimated: Boolean(show.setlistEstimated),
+          estimatedSongDurationSeconds: show.estimatedSongDurationSeconds ?? null,
+          matchConfidence: show.matchConfidence || null,
+          phishNetUrl: show.phishNetUrl || null,
+          showUrl: show.showUrl || null,
+          externalShowUrl: sourceLink?.url || null,
           setlistNotes: show.setlistNotes,
+          setlist: Array.isArray(show.setlist) ? show.setlist : [],
         },
         ''
       );
@@ -828,6 +840,10 @@ export default function ShowMatchCard({
   };
 
   const phishInAudioMessage = useMemo(() => renderPhishInAudioMessage(phishInLinks), [phishInLinks]);
+  const sourceLink = useMemo(
+    () => getShowSourceLink({ showData: show, showDate, provider: show?.provider, artistName: show?.artistName }),
+    [show, showDate],
+  );
 
   useEffect(() => {
     if (!showDate || !isPhishShow) {
@@ -1169,9 +1185,9 @@ export default function ShowMatchCard({
           )}
 
           <div className="mt-3 flex flex-col gap-1 text-xs text-cyan-300">
-            {show?.phishNetUrl ? (
-              <a href={show.phishNetUrl} target="_blank" rel="noreferrer" className="underline hover:text-cyan-200">
-                Open this show on phish.net
+            {sourceLink?.url ? (
+              <a href={sourceLink.url} target="_blank" rel="noreferrer" className="underline hover:text-cyan-200">
+                Open this show on {sourceLink.label}
               </a>
             ) : null}
             {isPhishShow ? (
