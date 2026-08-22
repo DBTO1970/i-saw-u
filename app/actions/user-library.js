@@ -15,6 +15,35 @@ function toObjectOrEmpty(value) {
   return value;
 }
 
+function isMeaningfulValue(value) {
+  if (value == null) {
+    return false;
+  }
+  if (typeof value === 'string') {
+    return value.trim().length > 0;
+  }
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+  if (typeof value === 'object') {
+    return Object.keys(value).length > 0;
+  }
+  return true;
+}
+
+function mergeShowData(existingShowData, incomingShowData) {
+  const merged = { ...toObjectOrEmpty(existingShowData) };
+  const incoming = toObjectOrEmpty(incomingShowData);
+
+  Object.entries(incoming).forEach(([key, value]) => {
+    if (isMeaningfulValue(value)) {
+      merged[key] = value;
+    }
+  });
+
+  return merged;
+}
+
 function applyShowMetadata(rawExifValue, matchedShowDate, showStartTime) {
   const nextRawExif = { ...toObjectOrEmpty(rawExifValue) };
   const nextShowMetadata = {
@@ -405,14 +434,30 @@ export async function saveShowToLibrary(showDate, showData, userNotes = '') {
       return { success: false, error: 'User is not authenticated.' };
     }
 
+    const { data: existingShow, error: existingShowError } = await supabase
+      .from('saved_shows')
+      .select('show_data, venue_name, location')
+      .eq('user_id', user.id)
+      .eq('show_date', showDate)
+      .maybeSingle();
+
+    if (existingShowError) {
+      console.error('Load Existing Show DB Error:', existingShowError);
+      return { success: false, error: existingShowError.message };
+    }
+
+    const mergedShowData = mergeShowData(existingShow?.show_data, showData);
+    const normalizedVenueName = showData?.venue || showData?.venue_name || showData?.venueName || existingShow?.venue_name || null;
+    const normalizedLocation = showData?.location || existingShow?.location || null;
+
     const { data, error } = await supabase
       .from('saved_shows')
       .upsert({
         user_id: user.id,
         show_date: showDate,
-        venue_name: showData?.venue || showData?.venue_name || null,
-        location: showData?.location || null,
-        show_data: showData || {},
+        venue_name: normalizedVenueName,
+        location: normalizedLocation,
+        show_data: mergedShowData,
         user_notes: userNotes,
       }, { onConflict: 'user_id,show_date' })
       .select()

@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { saveShowToLibrary, removeShowFromLibraryByDate } from '../app/actions/user-library';
+import { getShowSourceLink } from '../lib/show-source-links';
 
 export default function ShowBookmarkButton({ showDate, showData, initialIsBookmarked }) {
   const [isBookmarked, setIsBookmarked] = useState(!!initialIsBookmarked);
@@ -26,16 +27,32 @@ export default function ShowBookmarkButton({ showDate, showData, initialIsBookma
       const venue = showData?.venueName || showData?.venue || null;
       const city = showData?.city || null;
       const state = showData?.state || null;
+      const sourceLink = getShowSourceLink({
+        showData,
+        showDate,
+        provider: showData?.provider,
+        artistName: showData?.artistName,
+      });
       const res = await saveShowToLibrary(
         showDate,
         {
           venue,
           city,
           state,
+          date: showDate,
           location: [city, state].filter(Boolean).join(', ') || null,
           venueName: venue,
+          provider: showData?.provider || null,
+          artistName: showData?.artistName || null,
+          providerTier: showData?.providerTier || null,
+          setlistEstimated: Boolean(showData?.setlistEstimated),
+          estimatedSongDurationSeconds: showData?.estimatedSongDurationSeconds ?? null,
+          matchConfidence: showData?.matchConfidence || null,
           phishNetUrl: showData?.phishNetUrl || null,
           showUrl: showData?.showUrl || null,
+          externalShowUrl: sourceLink?.url || null,
+          setlist: Array.isArray(showData?.setlist) ? showData.setlist : [],
+          setlistNotes: showData?.setlistNotes || null,
         },
         ''
       );

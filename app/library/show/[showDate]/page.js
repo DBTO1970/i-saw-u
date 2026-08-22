@@ -12,6 +12,7 @@ import FanGalleryGrid from '../../../../components/FanGalleryGrid';
 import ShowSetlistPhotos from '../../../../components/ShowSetlistPhotos';
 import ShowBookmarkButton from '../../../../components/ShowBookmarkButton';
 import { deriveCurrentSongLabelFromShowMetadata, normalizeTimeContextLabel } from '../../../../lib/photo-show-context';
+import { getShowSourceLink, inferArtistNameFromProvider } from '../../../../lib/show-source-links';
 
 export const dynamic = 'force-dynamic';
 
@@ -72,7 +73,18 @@ export default async function ShowDetailPage({ params }) {
   }
 
   const { show: savedShow } = await getUserSavedShowByDate(showDate);
-  const savedArtistName = savedShow?.show_data?.artistName || 'Phish';
+  const savedShowData = savedShow?.show_data && typeof savedShow.show_data === 'object' && !Array.isArray(savedShow.show_data)
+    ? savedShow.show_data
+    : {};
+  const savedSourceLink = getShowSourceLink({
+    showData: savedShowData,
+    showDate,
+    provider: savedShowData.provider,
+    artistName: savedShowData.artistName,
+  });
+  const savedArtistName = savedShowData.artistName
+    || inferArtistNameFromProvider(savedShowData.provider || savedSourceLink?.provider)
+    || 'Phish';
 
   const [
    { show: liveShow },
@@ -84,7 +96,7 @@ export default async function ShowDetailPage({ params }) {
    getPublicPhotosForShow(showDate),
   ]);
 
-  // Combine: prefer live Phish.net data for rich details; fall back to saved row
+  // Combine: prefer live provider data for rich details; fall back to saved row
   const showData = liveShow
     ? liveShow
     : savedShow?.show_data
@@ -93,7 +105,12 @@ export default async function ShowDetailPage({ params }) {
 
   const artistName = showData?.artistName || savedShow?.show_data?.artistName || 'Show';
   const isPhishShow = String(showData?.provider || savedShow?.show_data?.provider || '').toLowerCase() === 'phishnet';
-  const phishNetUrl = showData?.phishNetUrl || (isPhishShow ? `https://phish.net/setlists/?d=${encodeURIComponent(showDate)}` : null);
+  const sourceLink = getShowSourceLink({
+    showData: showData || savedShowData,
+    showDate,
+    provider: showData?.provider || savedShowData.provider,
+    artistName,
+  });
   const phishInUrl = isPhishShow ? (showData?.showUrl || `https://phish.in/${showDate}`) : null;
 
   const setlist = showData?.setlist || [];
@@ -147,14 +164,16 @@ export default async function ShowDetailPage({ params }) {
               <p className="mt-1 text-base font-semibold text-slate-300">{formatDate(showDate)}</p>
             </div>
             <div className="flex flex-wrap gap-2 sm:shrink-0">
-              <a
-                href={phishNetUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="rounded-lg border border-cyan-700/50 bg-cyan-800/50 px-4 py-2 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-700/60"
-              >
-                phish.net ↗
-              </a>
+              {sourceLink?.url ? (
+                <a
+                  href={sourceLink.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-lg border border-cyan-700/50 bg-cyan-800/50 px-4 py-2 text-xs font-semibold text-cyan-200 transition hover:bg-cyan-700/60"
+                >
+                  {sourceLink.label} ↗
+                </a>
+              ) : null}
               {phishInUrl ? (
                 <a
                   href={phishInUrl}
@@ -186,11 +205,11 @@ export default async function ShowDetailPage({ params }) {
         ) : (
           <div className="rounded-xl border border-dashed border-slate-800 p-6 text-center text-sm text-slate-400">
             Could not load show data. Check back later.
-            {phishNetUrl ? (
+            {sourceLink?.url ? (
               <>
                 {' '}
                 or{' '}
-                <a href={phishNetUrl} target="_blank" rel="noreferrer" className="text-cyan-400 underline">
+                <a href={sourceLink.url} target="_blank" rel="noreferrer" className="text-cyan-400 underline">
                   view the source show page
                 </a>
                 .
