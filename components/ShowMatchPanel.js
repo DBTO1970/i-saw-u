@@ -1233,6 +1233,16 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
         </button>
       </div>
 
+      {activeFlowStep === flowSteps.length - 1 && saveStatus ? (
+        <div className={`rounded-2xl border px-4 py-3 text-sm font-medium ${
+          saveStatus.type === 'success'
+            ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
+            : 'border-rose-500/40 bg-rose-500/10 text-rose-200'
+        }`}>
+          {saveStatus.text}
+        </div>
+      ) : null}
+
       {activeFlowStep === 3 && effectiveShow ? (
         <AccordionSection
           title="Supplemental photo metadata"
