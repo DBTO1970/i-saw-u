@@ -489,7 +489,7 @@ export async function getUserLibraryPhotos() {
 
     const { data: photos, error } = await supabase
       .from('photos')
-      .select('*')
+      .select('id, user_id, storage_path, file_name, file_size, mime_type, is_public, matched_show_date, show_start_time, photo_hash, raw_exif, created_at, updated_at')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
@@ -575,6 +575,7 @@ export async function getUserLibraryPhotoById(photoId) {
 
 /**
  * Fetch adjacent photo IDs (newer/older) around a photo in the user's library order.
+ * Uses two targeted DB queries instead of downloading all IDs into JS.
  */
 export async function getUserLibraryPhotoSiblings(photoId) {
   try {
@@ -585,25 +586,43 @@ export async function getUserLibraryPhotoSiblings(photoId) {
       return { previousPhotoId: null, nextPhotoId: null, error: 'User not authenticated' };
     }
 
-    const { data: rows, error } = await supabase
+    // Resolve the current photo's created_at so we can do range queries.
+    const { data: current, error: currentError } = await supabase
       .from('photos')
-      .select('id')
+      .select('id, created_at')
+      .eq('id', photoId)
       .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
+      .maybeSingle();
 
-    if (error) {
-      return { previousPhotoId: null, nextPhotoId: null, error: error.message };
+    if (currentError) {
+      return { previousPhotoId: null, nextPhotoId: null, error: currentError.message };
     }
-
-    const ids = (rows || []).map((row) => row.id);
-    const currentIndex = ids.findIndex((id) => id === photoId);
-    if (currentIndex < 0) {
+    if (!current) {
       return { previousPhotoId: null, nextPhotoId: null, error: 'Photo not found' };
     }
 
+    // Previous = next newer photo (created_at > current, ascending order, limit 1 reversed)
+    // Next     = next older photo (created_at < current, descending order, limit 1)
+    const [{ data: prevRows }, { data: nextRows }] = await Promise.all([
+      supabase
+        .from('photos')
+        .select('id')
+        .eq('user_id', user.id)
+        .gt('created_at', current.created_at)
+        .order('created_at', { ascending: true })
+        .limit(1),
+      supabase
+        .from('photos')
+        .select('id')
+        .eq('user_id', user.id)
+        .lt('created_at', current.created_at)
+        .order('created_at', { ascending: false })
+        .limit(1),
+    ]);
+
     return {
-      previousPhotoId: currentIndex > 0 ? ids[currentIndex - 1] : null,
-      nextPhotoId: currentIndex < ids.length - 1 ? ids[currentIndex + 1] : null,
+      previousPhotoId: prevRows?.[0]?.id ?? null,
+      nextPhotoId: nextRows?.[0]?.id ?? null,
       error: null,
     };
   } catch (error) {
@@ -720,18 +739,18 @@ export async function getUserSavedShows() {
       return { shows: [], error: error.message };
     }
 
+    // Fetch only the matched_show_date for other users' public photos — no raw_exif, no full-table scan.
     let publicPhotoCounts = new Map();
     const { data: publicPhotoRows, error: publicPhotoError } = await supabase
       .from('photos')
-      .select('matched_show_date, user_id, is_public, raw_exif');
+      .select('matched_show_date')
+      .neq('user_id', user.id)
+      .eq('is_public', true)
+      .not('matched_show_date', 'is', null);
 
     if (!publicPhotoError) {
       (publicPhotoRows || []).forEach((row) => {
-        const normalizedRow = withNormalizedVisibility(row);
-        if (!normalizedRow.matched_show_date || normalizedRow.user_id === user.id || normalizedRow.is_public !== true) {
-          return;
-        }
-        publicPhotoCounts.set(normalizedRow.matched_show_date, (publicPhotoCounts.get(normalizedRow.matched_show_date) || 0) + 1);
+        publicPhotoCounts.set(row.matched_show_date, (publicPhotoCounts.get(row.matched_show_date) || 0) + 1);
       });
     }
 
@@ -759,13 +778,21 @@ export async function getRecentFanPhotoShows(limit = 8) {
       return { shows: [], error: 'User not authenticated' };
     }
 
-    // Fetch all public photos from other users that are matched to a Phish show
+    const normalizedLimit = Number.isFinite(Number(limit))
+      ? Math.max(1, Math.floor(Number(limit)))
+      : 8;
+
+    // Only fetch columns needed: is_public for visibility, matched_show_date + created_at for grouping/sorting,
+    // raw_exif only to extract showMetadata venue info when the user hasn't saved the show.
+    // Cap rows at the DB layer — we only need enough unique show dates to fill the limit.
     const { data: photoRows, error: photoRowsError } = await supabase
       .from('photos')
-      .select('*')
+      .select('user_id, is_public, matched_show_date, created_at, raw_exif')
       .neq('user_id', user.id)
+      .eq('is_public', true)
       .not('matched_show_date', 'is', null)
-      .order('created_at', { ascending: false });
+      .order('created_at', { ascending: false })
+      .limit(normalizedLimit * 100);
 
     if (photoRowsError) {
       return { shows: [], error: visibilitySchemaMissingMessage(photoRowsError) || photoRowsError.message };
@@ -779,30 +806,29 @@ export async function getRecentFanPhotoShows(limit = 8) {
 
     const savedShowMap = new Map((savedShows || []).map((s) => [s.show_date, s]));
 
-    // Group public photos by show date
+    // Group public photos by show date (is_public already filtered at DB layer)
     const statsByShowDate = new Map();
     (photoRows || []).forEach((photoRow) => {
-      const normalizedPhoto = withNormalizedVisibility(photoRow);
-      if (!normalizedPhoto?.matched_show_date || normalizedPhoto.is_public !== true) {
+      if (!photoRow?.matched_show_date) {
         return;
       }
 
-      const showDate = normalizedPhoto.matched_show_date;
+      const showDate = photoRow.matched_show_date;
       const current = statsByShowDate.get(showDate) || {
         show_date: showDate,
         venue_name: null,
         location: null,
         new_public_photo_count: 0,
         latest_public_photo_at: null,
-        _firstPhoto: normalizedPhoto,
+        _firstPhoto: photoRow,
       };
 
       current.new_public_photo_count += 1;
       if (
-        normalizedPhoto.created_at &&
-        (!current.latest_public_photo_at || normalizedPhoto.created_at > current.latest_public_photo_at)
+        photoRow.created_at &&
+        (!current.latest_public_photo_at || photoRow.created_at > current.latest_public_photo_at)
       ) {
-        current.latest_public_photo_at = normalizedPhoto.created_at;
+        current.latest_public_photo_at = photoRow.created_at;
       }
 
       statsByShowDate.set(showDate, current);
@@ -824,10 +850,6 @@ export async function getRecentFanPhotoShows(limit = 8) {
       }
       delete stats._firstPhoto;
     }
-
-    const normalizedLimit = Number.isFinite(Number(limit))
-      ? Math.max(1, Math.floor(Number(limit)))
-      : 8;
 
     const recentShows = Array.from(statsByShowDate.values())
       .sort((left, right) =>
@@ -1073,18 +1095,21 @@ export async function getPublicPhotosForShow(showDate) {
       return { photos: [], error: 'User not authenticated' };
     }
 
+    // Filter is_public at the DB layer to avoid transferring private photos and discarding them in JS.
+    // raw_exif is retained for song-label display in the photo cards.
     const { data: photos, error } = await supabase
       .from('photos')
-      .select('*')
+      .select('id, user_id, storage_path, file_name, file_size, mime_type, is_public, matched_show_date, show_start_time, raw_exif, created_at')
       .eq('matched_show_date', showDate)
+      .eq('is_public', true)
       .order('created_at', { ascending: false });
 
     if (error) {
       return { photos: [], error: visibilitySchemaMissingMessage(error) || error.message };
     }
 
-    const normalizedPhotos = (photos || []).map(withNormalizedVisibility);
-    const publicPhotos = normalizedPhotos.filter((photo) => photo.is_public === true);
+    // is_public already filtered at DB layer; withNormalizedVisibility still normalises the boolean shape.
+    const publicPhotos = (photos || []).map(withNormalizedVisibility);
     const userIds = [...new Set(publicPhotos.map((photo) => photo.user_id).filter(Boolean))];
     if (userIds.length === 0) {
       return { photos: [], error: null };
@@ -1101,10 +1126,12 @@ export async function getPublicPhotosForShow(showDate) {
         .from('saved_shows')
         .select('user_id')
         .in('user_id', userIds),
+      // Count public photos per photographer — use is_public DB filter instead of raw_exif fallback.
       supabase
         .from('photos')
-        .select('user_id, is_public, raw_exif')
-        .in('user_id', userIds),
+        .select('user_id')
+        .in('user_id', userIds)
+        .eq('is_public', true),
       supabase
         .from('photo_likes')
         .select('photo_id, user_id')
@@ -1127,9 +1154,8 @@ export async function getPublicPhotosForShow(showDate) {
     });
 
     safeUserPhotoRows.forEach((row) => {
-      if (normalizePhotoVisibility(row) === true) {
-        publicPhotosByUser.set(row.user_id, (publicPhotosByUser.get(row.user_id) || 0) + 1);
-      }
+      // All rows already have is_public=true (filtered at DB layer).
+      publicPhotosByUser.set(row.user_id, (publicPhotosByUser.get(row.user_id) || 0) + 1);
     });
 
     safeLikeRows.forEach((row) => {
@@ -1252,19 +1278,19 @@ export async function getUserLikedPhotos() {
     const photoIds = likeRows.map((r) => r.photo_id);
     const likedAtByPhotoId = new Map(likeRows.map((r) => [r.photo_id, r.created_at]));
 
-    // Fetch the photos (only public ones from other users)
+    // Fetch the photos (only public ones from other users — filter at DB layer)
     const { data: photos, error: photosError } = await supabase
       .from('photos')
-      .select('*')
+      .select('id, user_id, storage_path, file_name, file_size, mime_type, is_public, matched_show_date, show_start_time, raw_exif, created_at')
       .in('id', photoIds)
-      .neq('user_id', user.id);
+      .neq('user_id', user.id)
+      .eq('is_public', true);
 
     if (photosError) {
       return { photos: [], error: photosError.message };
     }
 
-    const normalizedPhotos = (photos || []).map(withNormalizedVisibility)
-      .filter((p) => p.is_public === true);
+    const normalizedPhotos = (photos || []).map(withNormalizedVisibility);
 
     if (normalizedPhotos.length === 0) {
       return { photos: [], error: null };
