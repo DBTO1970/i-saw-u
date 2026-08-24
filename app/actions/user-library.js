@@ -489,7 +489,7 @@ export async function getUserLibraryPhotos() {
 
     const { data: photos, error } = await supabase
       .from('photos')
-      .select('id, user_id, storage_path, file_name, file_size, mime_type, is_public, matched_show_date, show_start_time, photo_hash, raw_exif, created_at, updated_at')
+      .select('id, user_id, storage_path, file_name, file_size, mime_type, date_taken, time_taken, is_public, matched_show_date, show_start_time, photo_hash, raw_exif, created_at')
       .eq('user_id', user.id)
       .order('created_at', { ascending: false });
 
