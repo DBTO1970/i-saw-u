@@ -372,13 +372,25 @@ export default function ShowSetlistPhotos({ setGroups = [], photos = [] }) {
 
             <div className="max-h-[80vh] overflow-y-auto p-4">
               {selectedPhoto.photo_url || selectedPhoto.url ? (
-                <img
-                  src={selectedPhoto.photo_url || selectedPhoto.url}
-                  alt={selectedPhoto.file_name || 'Fan photo'}
-                  className="mx-auto h-auto w-full object-contain"
-                  loading="eager"
-                  decoding="async"
-                />
+                <>
+                  <img
+                    src={selectedPhoto.thumb_url || selectedPhoto.photo_url || selectedPhoto.url}
+                    alt={selectedPhoto.file_name || 'Fan photo'}
+                    className="mx-auto h-auto w-full object-contain"
+                    loading="eager"
+                    decoding="async"
+                  />
+                  <div className="mt-2 text-center">
+                    <a
+                      href={selectedPhoto.photo_url || selectedPhoto.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-slate-500 hover:text-cyan-400"
+                    >
+                      View full resolution
+                    </a>
+                  </div>
+                </>
               ) : (
                 <div className="flex aspect-[4/3] w-full items-center justify-center rounded-2xl border border-dashed border-slate-800 bg-slate-900/80 text-sm text-slate-400">
                   Photo unavailable
