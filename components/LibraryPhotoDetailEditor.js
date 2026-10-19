@@ -145,7 +145,7 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
 
   return (
     <section className="space-y-4 md:space-y-6">
-      <div className="overflow-hidden rounded-2xl border border-cyan-500/20 bg-gradient-to-b from-slate-900/95 via-slate-950/85 to-slate-950/70 shadow-xl shadow-cyan-950/20 md:rounded-3xl md:bord...">
+      <div className="overflow-hidden rounded-2xl border border-cyan-500/20 bg-gradient-to-b from-slate-900/95 via-slate-950/85 to-slate-950/70 shadow-xl shadow-cyan-950/20 md:rounded-3xl md:border-cyan-400/25 md:shadow-2xl md:shadow-cyan-950/40">
         {initialPhoto.photo_url || initialPhoto.url ? (
           <div className="p-2 sm:p-4 md:p-6">
             <img
@@ -224,3 +224,82 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
             File name
             <input value={form.fileName} onChange={onChange('fileName')} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
           </label>
+          <label className="text-xs text-slate-300">
+            Matched show date
+            <input type="date" value={form.matchedShowDate} onChange={onChange('matchedShowDate')} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
+          </label>
+          <label className="text-xs text-slate-300">
+            Date taken
+            <input type="date" value={form.dateTaken} onChange={onChange('dateTaken')} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
+          </label>
+          <label className="text-xs text-slate-300">
+            Time taken
+            <input type="time" value={form.timeTaken} onChange={onChange('timeTaken')} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
+          </label>
+          <label className="text-xs text-slate-300">
+            Show start time
+            <input type="time" value={form.showStartTime} onChange={onChange('showStartTime')} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
+          </label>
+          <label className="text-xs text-slate-300">
+            GPS latitude
+            <input value={form.gpsLatitude} onChange={onChange('gpsLatitude')} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
+          </label>
+          <label className="text-xs text-slate-300">
+            GPS longitude
+            <input value={form.gpsLongitude} onChange={onChange('gpsLongitude')} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
+          </label>
+        </div>
+
+        <label className="block text-xs text-slate-300">
+          Raw EXIF JSON
+          <textarea
+            value={form.rawExif}
+            onChange={onChange('rawExif')}
+            rows={8}
+            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 font-mono text-xs text-white"
+          />
+        </label>
+
+        {saveStatus ? (
+          <div className={`rounded-lg border px-3 py-2 text-xs font-medium ${saveStatus.type === 'success' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-red-500/30 bg-red-500/10 text-red-300'}`}>
+            {saveStatus.text}
+          </div>
+        ) : null}
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            type="submit"
+            disabled={isSaving || isDeleting}
+            className="rounded-xl bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:opacity-60"
+          >
+            {isSaving ? 'Saving...' : 'Save metadata'}
+          </button>
+          <button
+            type="button"
+            onClick={handleDelete}
+            disabled={isDeleting || isSaving}
+            className="rounded-xl border border-red-500/50 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-200 transition hover:bg-red-500/20 disabled:opacity-60"
+          >
+            {isDeleting ? 'Deleting...' : 'Delete photo'}
+          </button>
+        </div>
+      </form>
+
+      {showForCard ? (
+        <ShowMatchCard
+          photoMetadata={showCardPhotoMetadata}
+          show={showForCard}
+          showStartTime={form.showStartTime || '20:00'}
+          onShowStartTimeChange={handleShowStartTimeChange}
+          initialIsBookmarked={!!savedShowMetadata}
+          initialTimeContextLabel={initialTimeContextLabel}
+          initialCurrentSongLabel={initialCurrentSongLabel}
+        />
+      ) : (
+        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-300">
+          No saved show information found for this photo yet.
+        </div>
+      )}
+    </section>
+  );
+}
