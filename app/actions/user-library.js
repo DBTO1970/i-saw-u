@@ -229,6 +229,8 @@ export async function savePhotoToLibrary(formData) {
     const showStartTime = typeof showStartTimeRaw === 'string' && /^\d{2}:\d{2}$/.test(showStartTimeRaw)
       ? showStartTimeRaw
       : null;
+    const isPublicRaw = formData.get('isPublic');
+    const submittedIsPublic = isPublicRaw === true || (typeof isPublicRaw === 'string' && (isPublicRaw === 'true' || isPublicRaw === '1'));
     const rawExifJson = formData.get('rawExif') || '{}';
     const parsedRawExif = applyShowMetadata(JSON.parse(rawExifJson), matchedShowDate, showStartTime);
     const submittedPhotoHash = normalizePhotoHash(formData.get('photoHash'));
@@ -258,7 +260,6 @@ export async function savePhotoToLibrary(formData) {
     }
 
     if (hasServerUploadFile) {
-      // Legacy path: server-side upload through Vercel route.
       const arrayBuffer = await file.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
       photoHash = createHash('sha256').update(buffer).digest('hex');
@@ -300,11 +301,10 @@ export async function savePhotoToLibrary(formData) {
       photo_hash: photoHash,
       matched_show_date: toNullableDate(matchedShowDate),
       show_start_time: showStartTime,
-      raw_exif: buildVisibilityAwareRawExif(parsedRawExif, false),
-      is_public: false,
+      raw_exif: buildVisibilityAwareRawExif(parsedRawExif, !!submittedIsPublic),
+      is_public: !!submittedIsPublic,
     };
 
-    // 2. Insert record into 'photos' database table
     const { data: photoRecord, error: dbError } = await supabase
       .from('photos')
       .insert(baseInsertPayload)
@@ -387,10 +387,6 @@ export async function savePhotoToLibrary(formData) {
   }
 }
 
-/**
- * Silently upsert a show bookmark when a photo with a matched show date is saved.
- * Only inserts — existing bookmarks (with user notes etc.) are left untouched.
- */
 async function autoBookmarkShow(supabase, userId, matchedShowDate, rawExif) {
   if (!matchedShowDate) {
     return;
@@ -422,9 +418,6 @@ async function autoBookmarkShow(supabase, userId, matchedShowDate, rawExif) {
   }
 }
 
-/**
- * Save or update a show in the user's library
- */
 export async function saveShowToLibrary(showDate, showData, userNotes = '') {
   try {
     const supabase = createClient();
@@ -475,9 +468,6 @@ export async function saveShowToLibrary(showDate, showData, userNotes = '') {
   }
 }
 
-/**
- * Fetch all photos saved in the user's library
- */
 export async function getUserLibraryPhotos() {
   try {
     const supabase = createClient();
@@ -515,7 +505,6 @@ export async function getUserLibraryPhotos() {
       }
     }
 
-    // Resolve photo URLs through the local storage proxy.
     const photosWithUrls = await Promise.all(
       normalizedPhotos.map(async (photo) => {
         return {
@@ -531,9 +520,6 @@ export async function getUserLibraryPhotos() {
   }
 }
 
-/**
- * Fetch one photo from the user's library
- */
 export async function getUserLibraryPhotoById(photoId) {
   try {
     const supabase = createClient();
@@ -573,10 +559,6 @@ export async function getUserLibraryPhotoById(photoId) {
   }
 }
 
-/**
- * Fetch adjacent photo IDs (newer/older) around a photo in the user's library order.
- * Uses two targeted DB queries instead of downloading all IDs into JS.
- */
 export async function getUserLibraryPhotoSiblings(photoId) {
   try {
     const supabase = createClient();
@@ -586,7 +568,6 @@ export async function getUserLibraryPhotoSiblings(photoId) {
       return { previousPhotoId: null, nextPhotoId: null, error: 'User not authenticated' };
     }
 
-    // Resolve the current photo's created_at so we can do range queries.
     const { data: current, error: currentError } = await supabase
       .from('photos')
       .select('id, created_at')
@@ -601,8 +582,6 @@ export async function getUserLibraryPhotoSiblings(photoId) {
       return { previousPhotoId: null, nextPhotoId: null, error: 'Photo not found' };
     }
 
-    // Previous = next newer photo (created_at > current, ascending order, limit 1 reversed)
-    // Next     = next older photo (created_at < current, descending order, limit 1)
     const [{ data: prevRows }, { data: nextRows }] = await Promise.all([
       supabase
         .from('photos')
@@ -665,9 +644,6 @@ function toNullableFloat(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-/**
- * Update editable metadata on a photo
- */
 export async function updateUserLibraryPhotoMetadata(photoId, payload) {
   try {
     const supabase = createClient();
@@ -717,9 +693,6 @@ export async function updateUserLibraryPhotoMetadata(photoId, payload) {
   }
 }
 
-/**
- * Fetch all shows saved in the user's library
- */
 export async function getUserSavedShows() {
   try {
     const supabase = createClient();
@@ -739,7 +712,6 @@ export async function getUserSavedShows() {
       return { shows: [], error: error.message };
     }
 
-    // Fetch only the matched_show_date for other users' public photos — no raw_exif, no full-table scan.
     let publicPhotoCounts = new Map();
     const { data: publicPhotoRows, error: publicPhotoError } = await supabase
       .from('photos')
@@ -765,10 +737,6 @@ export async function getUserSavedShows() {
   }
 }
 
-/**
- * Fetch Phish shows that recently received public fan photos from other users.
- * Not limited to the user's bookmarked shows — any matched show with public photos qualifies.
- */
 export async function getRecentFanPhotoShows(limit = 8) {
   try {
     const supabase = createClient();
@@ -782,9 +750,6 @@ export async function getRecentFanPhotoShows(limit = 8) {
       ? Math.max(1, Math.floor(Number(limit)))
       : 8;
 
-    // Only fetch columns needed: is_public for visibility, matched_show_date + created_at for grouping/sorting,
-    // raw_exif only to extract showMetadata venue info when the user hasn't saved the show.
-    // Cap rows at the DB layer — we only need enough unique show dates to fill the limit.
     const { data: photoRows, error: photoRowsError } = await supabase
       .from('photos')
       .select('user_id, is_public, matched_show_date, created_at, raw_exif')
@@ -798,7 +763,6 @@ export async function getRecentFanPhotoShows(limit = 8) {
       return { shows: [], error: visibilitySchemaMissingMessage(photoRowsError) || photoRowsError.message };
     }
 
-    // Fetch the current user's saved shows for venue info enrichment
     const { data: savedShows } = await supabase
       .from('saved_shows')
       .select('show_date, venue_name, location')
@@ -806,7 +770,6 @@ export async function getRecentFanPhotoShows(limit = 8) {
 
     const savedShowMap = new Map((savedShows || []).map((s) => [s.show_date, s]));
 
-    // Group public photos by show date (is_public already filtered at DB layer)
     const statsByShowDate = new Map();
     (photoRows || []).forEach((photoRow) => {
       if (!photoRow?.matched_show_date) {
@@ -834,7 +797,6 @@ export async function getRecentFanPhotoShows(limit = 8) {
       statsByShowDate.set(showDate, current);
     });
 
-    // Enrich each show entry with venue info
     for (const [showDate, stats] of statsByShowDate) {
       const saved = savedShowMap.get(showDate);
       if (saved) {
@@ -863,9 +825,6 @@ export async function getRecentFanPhotoShows(limit = 8) {
   }
 }
 
-/**
- * Fetch a single saved show by show_date for the current user.
- */
 export async function getUserSavedShowByDate(showDate) {
   try {
     const supabase = createClient();
@@ -892,10 +851,6 @@ export async function getUserSavedShowByDate(showDate) {
   }
 }
 
-/**
- * Fetch all user-library photos that match a given show date,
- * with proxy URLs included.
- */
 export async function getUserPhotosForShow(showDate) {
   try {
     const supabase = createClient();
@@ -930,9 +885,6 @@ export async function getUserPhotosForShow(showDate) {
   }
 }
 
-/**
- * Delete a photo from library
- */
 export async function deletePhotoFromLibrary(photoId, storagePath) {
   try {
     const supabase = createClient();
@@ -969,9 +921,6 @@ export async function deletePhotoFromLibrary(photoId, storagePath) {
   }
 }
 
-/**
- * Remove a bookmarked show by show_date (for the current user).
- */
 export async function removeShowFromLibraryByDate(showDate) {
   try {
     const supabase = createClient();
@@ -997,9 +946,6 @@ export async function removeShowFromLibraryByDate(showDate) {
   }
 }
 
-/**
- * Delete a saved show from library (by row id)
- */
 export async function deleteSavedShow(showId) {
   try {
     const supabase = createClient();
@@ -1025,9 +971,6 @@ export async function deleteSavedShow(showId) {
   }
 }
 
-/**
- * Toggle a photo's public visibility for the authenticated owner.
- */
 export async function togglePhotoVisibility(photoId, isPublic) {
   try {
     const supabase = createClient();
@@ -1083,9 +1026,6 @@ export async function togglePhotoVisibility(photoId, isPublic) {
   }
 }
 
-/**
- * Fetch public photos for a show, including creator profiles and basic fan stats.
- */
 export async function getPublicPhotosForShow(showDate) {
   try {
     const supabase = createClient();
@@ -1095,8 +1035,6 @@ export async function getPublicPhotosForShow(showDate) {
       return { photos: [], error: 'User not authenticated' };
     }
 
-    // Filter is_public at the DB layer to avoid transferring private photos and discarding them in JS.
-    // raw_exif is retained for song-label display in the photo cards.
     const { data: photos, error } = await supabase
       .from('photos')
       .select('id, user_id, storage_path, file_name, file_size, mime_type, is_public, matched_show_date, show_start_time, raw_exif, created_at')
@@ -1108,7 +1046,6 @@ export async function getPublicPhotosForShow(showDate) {
       return { photos: [], error: visibilitySchemaMissingMessage(error) || error.message };
     }
 
-    // is_public already filtered at DB layer; withNormalizedVisibility still normalises the boolean shape.
     const publicPhotos = (photos || []).map(withNormalizedVisibility);
     const userIds = [...new Set(publicPhotos.map((photo) => photo.user_id).filter(Boolean))];
     if (userIds.length === 0) {
@@ -1126,7 +1063,6 @@ export async function getPublicPhotosForShow(showDate) {
         .from('saved_shows')
         .select('user_id')
         .in('user_id', userIds),
-      // Count public photos per photographer — use is_public DB filter instead of raw_exif fallback.
       supabase
         .from('photos')
         .select('user_id')
@@ -1154,7 +1090,6 @@ export async function getPublicPhotosForShow(showDate) {
     });
 
     safeUserPhotoRows.forEach((row) => {
-      // All rows already have is_public=true (filtered at DB layer).
       publicPhotosByUser.set(row.user_id, (publicPhotosByUser.get(row.user_id) || 0) + 1);
     });
 
@@ -1194,10 +1129,6 @@ export async function getPublicPhotosForShow(showDate) {
   }
 }
 
-/**
- * Toggle a like on a public photo for the authenticated user.
- * Returns the new like count and whether the current user has liked it.
- */
 export async function togglePhotoLike(photoId) {
   try {
     const supabase = createClient();
@@ -1248,9 +1179,7 @@ export async function togglePhotoLike(photoId) {
     return { success: false, error: error.message };
   }
 }
-/**
- * Fetch all public photos the current user has liked, with proxy URLs and show metadata.
- */
+
 export async function getUserLikedPhotos() {
   try {
     const supabase = createClient();
@@ -1260,7 +1189,6 @@ export async function getUserLikedPhotos() {
       return { photos: [], error: 'User not authenticated' };
     }
 
-    // Get photo IDs the user has liked
     const { data: likeRows, error: likeError } = await supabase
       .from('photo_likes')
       .select('photo_id, created_at')
@@ -1278,7 +1206,6 @@ export async function getUserLikedPhotos() {
     const photoIds = likeRows.map((r) => r.photo_id);
     const likedAtByPhotoId = new Map(likeRows.map((r) => [r.photo_id, r.created_at]));
 
-    // Fetch the photos (only public ones from other users — filter at DB layer)
     const { data: photos, error: photosError } = await supabase
       .from('photos')
       .select('id, user_id, storage_path, file_name, file_size, mime_type, is_public, matched_show_date, show_start_time, raw_exif, created_at')
@@ -1296,7 +1223,6 @@ export async function getUserLikedPhotos() {
       return { photos: [], error: null };
     }
 
-    // Fetch like counts for these photos
     const { data: allLikeRows } = await supabase
       .from('photo_likes')
       .select('photo_id')
@@ -1307,7 +1233,6 @@ export async function getUserLikedPhotos() {
       likeCountByPhoto.set(row.photo_id, (likeCountByPhoto.get(row.photo_id) || 0) + 1);
     });
 
-    // Fetch creator profiles
     const creatorIds = [...new Set(normalizedPhotos.map((p) => p.user_id).filter(Boolean))];
     const { data: profiles } = await supabase
       .from('profiles')
@@ -1316,7 +1241,6 @@ export async function getUserLikedPhotos() {
 
     const profileById = new Map((profiles || []).map((p) => [p.id, p]));
 
-    // Generate proxy URLs and assemble
     const photosWithUrls = await Promise.all(
       normalizedPhotos.map(async (photo) => {
         const creator = profileById.get(photo.user_id) || null;
@@ -1336,7 +1260,6 @@ export async function getUserLikedPhotos() {
       })
     );
 
-    // Sort by when the user liked them (most recent first)
     photosWithUrls.sort((a, b) => String(b.liked_at || '').localeCompare(String(a.liked_at || '')));
 
     return { photos: photosWithUrls, error: null };
@@ -1344,3 +1267,85 @@ export async function getUserLikedPhotos() {
     return { photos: [], error: error.message };
   }
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
