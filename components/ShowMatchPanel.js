@@ -769,12 +769,7 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
     const result = await uploaderRef.current?.saveToLibrary?.();
     if (!result) {
       setSaveStatus({ type: 'error', text: 'No photo selected to save.' });
-      return;
     }
-
-    setSaveStatus(result.success
-      ? { type: 'success', text: result.message || 'Saved to your personal library!' }
-      : { type: 'error', text: result.message || 'Failed to save photo.' });
   }, []);
 
   const clearCurrentPhotoAndStartOver = () => {
@@ -913,15 +908,6 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
           </>
         ) : null}
 
-        {saveStatus ? (
-          <div className={`rounded-2xl border px-4 py-3 text-sm font-medium ${
-            saveStatus.type === 'success'
-              ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
-              : 'border-rose-500/40 bg-rose-500/10 text-rose-200'
-          }`}>
-            {saveStatus.text}
-          </div>
-        ) : null}
       </div>
 
       {activeFlowStep === 1 ? (
@@ -1233,16 +1219,6 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
         </button>
       </div>
 
-      {activeFlowStep === flowSteps.length - 1 && saveStatus ? (
-        <div className={`rounded-2xl border px-4 py-3 text-sm font-medium ${
-          saveStatus.type === 'success'
-            ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
-            : 'border-rose-500/40 bg-rose-500/10 text-rose-200'
-        }`}>
-          {saveStatus.text}
-        </div>
-      ) : null}
-
       {activeFlowStep === 3 && effectiveShow ? (
         <AccordionSection
           title="Supplemental photo metadata"
@@ -1308,6 +1284,39 @@ export default function ShowMatchPanel({ initialPhotoMetadata, initialShowResult
               </div>
           </div>
         </AccordionSection>
+      ) : null}
+
+      {saveStatus ? (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/80 p-4 backdrop-blur-sm">
+          <div
+            role="alertdialog"
+            aria-modal="true"
+            aria-labelledby="photo-save-result-title"
+            aria-describedby="photo-save-result-message"
+            className={`w-full max-w-md rounded-2xl border p-6 shadow-2xl ${
+              saveStatus.type === 'success'
+                ? 'border-emerald-500/40 bg-slate-900 text-emerald-100'
+                : 'border-rose-500/40 bg-slate-900 text-rose-100'
+            }`}
+          >
+            <h2 id="photo-save-result-title" className="text-lg font-semibold">
+              {saveStatus.type === 'success' ? 'Photo saved' : 'Unable to save photo'}
+            </h2>
+            <p id="photo-save-result-message" className="mt-2 text-sm text-slate-300">
+              {saveStatus.text}
+            </p>
+            <div className="mt-6 flex justify-end">
+              <button
+                type="button"
+                autoFocus
+                onClick={() => setSaveStatus(null)}
+                className="rounded-lg bg-cyan-500 px-5 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 focus:outline-none focus:ring-2 focus:ring-cyan-300 focus:ring-offset-2 focus:ring-offset-slate-900"
+              >
+                OK
+              </button>
+            </div>
+          </div>
+        </div>
       ) : null}
     </div>
   );

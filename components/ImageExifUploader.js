@@ -733,7 +733,8 @@ const ImageExifUploader = forwardRef(function ImageExifUploader({
   const [sidecarError, setSidecarError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [isCapturingPhoto, setIsCapturingPhoto] = useState(false);
-  const [saveMessage, setSaveMessage] = useState(null);
+  const [hasSaved, setHasSaved] = useState(false);
+  const [isPublic, setIsPublic] = useState(false);
   const previewUrlRef = useRef('');
   const inputRef = useRef(null);
   const sidecarInputRef = useRef(null);
@@ -749,7 +750,6 @@ const ImageExifUploader = forwardRef(function ImageExifUploader({
 
     const sourceFile = lastImageFileRef.current;
     setIsSaving(true);
-    setSaveMessage(null);
     logSavePipelineDiagnostic('save-start', sourceFile, {
       selectedFileName: selectedFileName || null,
       hasDate: metadata.dateTimeOriginal !== 'Not available',
@@ -844,6 +844,7 @@ const ImageExifUploader = forwardRef(function ImageExifUploader({
         formData.append('thumbFileSize', String(thumbBlob.size));
         formData.append('mimeType', 'image/webp');
         formData.append('photoHash', photoHash);
+        formData.append('isPublic', String(isPublic));
         formData.append('fileName', selectedFileName || originalName);
         formData.append('dateTaken', metadata.dateTimeOriginal || '');
         formData.append('timeTaken', metadata.timeTaken || '');
@@ -951,14 +952,13 @@ const ImageExifUploader = forwardRef(function ImageExifUploader({
           responseKeys: res && typeof res === 'object' ? Object.keys(res).slice(0, 10) : [],
         });
         const result = { success: false, message: 'Save did not complete correctly. Please try again.' };
-        setSaveMessage({ type: 'error', text: result.message });
         onSaveResult?.(result);
         return result;
       }
 
       if (res.success) {
         const successMessage = 'Saved to your personal library!';
-        setSaveMessage({ type: 'success', text: successMessage });
+        setHasSaved(true);
         const result = { success: true, message: successMessage };
         onSaveResult?.(result);
         return result;
@@ -969,14 +969,12 @@ const ImageExifUploader = forwardRef(function ImageExifUploader({
           apiError: res.error || null,
         });
         const errorMessage = res.error || 'Failed to save photo.';
-        setSaveMessage({ type: 'error', text: errorMessage });
         const result = { success: false, message: errorMessage };
         onSaveResult?.(result);
         return result;
       }
     } catch (err) {
       const errorMessage = err.message || 'Error converting/uploading image.';
-      setSaveMessage({ type: 'error', text: errorMessage });
       const result = { success: false, message: errorMessage };
       onSaveResult?.(result);
       return result;
@@ -1020,6 +1018,8 @@ const ImageExifUploader = forwardRef(function ImageExifUploader({
     previewUrlRef.current = nextPreviewUrl;
     setPreviewUrl(nextPreviewUrl);
     setSelectedFileName(file.name);
+    setIsPublic(false);
+    setHasSaved(false);
     onPreviewChange?.(nextPreviewUrl, file.name);
     setIsParsing(true);
     setError('');
@@ -1170,7 +1170,6 @@ const ImageExifUploader = forwardRef(function ImageExifUploader({
 
   const handleCaptureWithCamera = useCallback(async () => {
     setError('');
-    setSaveMessage(null);
     setIsCapturingPhoto(true);
 
     try {
@@ -1356,14 +1355,6 @@ const ImageExifUploader = forwardRef(function ImageExifUploader({
             </div>
           </div>
 
-          {saveMessage && (
-            <div className={`mx-4 mt-4 rounded-xl border p-3 text-xs font-medium ${
-              saveMessage.type === 'success' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-red-500/30 bg-emerald-500/10 text-red-300'
-            }`}>
-              {saveMessage.text}
-            </div>
-          )}
-
           <div className="p-3 sm:p-6">
            <div className="mx-auto w-full max-w-3xl overflow-hidden rounded-2xl bg-slate-950/80 p-2">
              <img
@@ -1372,6 +1363,41 @@ const ImageExifUploader = forwardRef(function ImageExifUploader({
                className="h-auto w-full rounded-xl object-contain"
               />
             </div>
+           {!hasSaved ? (
+             <fieldset className="mx-auto mt-4 max-w-md" disabled={isSaving}>
+                <legend className="mb-2 text-center text-xs font-semibold text-slate-300">Photo visibility</legend>
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { value: false, label: 'Private', description: 'Only you can see it', accentClass: 'accent-cyan-400' },
+                    { value: true, label: 'Public', description: 'Visible in the public gallery', accentClass: 'accent-emerald-400' },
+                  ].map((option) => (
+                    <label
+                      key={option.label}
+                      className={`flex cursor-pointer items-start gap-2 rounded-xl border px-3 py-2 text-left transition ${
+                        isPublic === option.value
+                          ? option.value
+                            ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-200'
+                            : 'border-cyan-500/50 bg-cyan-500/10 text-cyan-200'
+                          : 'border-slate-700 bg-slate-950/70 text-slate-400 hover:border-slate-500'
+                      } ${isSaving ? 'cursor-not-allowed opacity-60' : ''}`}
+                    >
+                      <input
+                        type="radio"
+                        name="photo-visibility"
+                        value={String(option.value)}
+                        checked={isPublic === option.value}
+                        onChange={() => setIsPublic(option.value)}
+                        className={`mt-1 shrink-0 ${option.accentClass}`}
+                      />
+                      <span>
+                        <span className="block text-sm font-semibold">{option.label}</span>
+                        <span className="mt-0.5 block text-[11px] opacity-80">{option.description}</span>
+                      </span>
+                    </label>
+                  ))}
+                </div>
+             </fieldset>
+           ) : null}
            <div className="mt-4 flex justify-center">
              <button
                type="button"

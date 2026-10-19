@@ -229,6 +229,11 @@ export async function savePhotoToLibrary(formData) {
     const showStartTime = typeof showStartTimeRaw === 'string' && /^\d{2}:\d{2}$/.test(showStartTimeRaw)
       ? showStartTimeRaw
       : null;
+    const isPublicRaw = formData.get('isPublic');
+    if (isPublicRaw !== null && isPublicRaw !== 'true' && isPublicRaw !== 'false') {
+      return { success: false, error: 'Invalid photo visibility.' };
+    }
+    const isPublic = isPublicRaw === 'true';
     const rawExifJson = formData.get('rawExif') || '{}';
     const parsedRawExif = applyShowMetadata(JSON.parse(rawExifJson), matchedShowDate, showStartTime);
     const submittedPhotoHash = normalizePhotoHash(formData.get('photoHash'));
@@ -300,8 +305,8 @@ export async function savePhotoToLibrary(formData) {
       photo_hash: photoHash,
       matched_show_date: toNullableDate(matchedShowDate),
       show_start_time: showStartTime,
-      raw_exif: buildVisibilityAwareRawExif(parsedRawExif, false),
-      is_public: false,
+      raw_exif: buildVisibilityAwareRawExif(parsedRawExif, isPublic),
+      is_public: isPublic,
     };
 
     // 2. Insert record into 'photos' database table
@@ -312,6 +317,11 @@ export async function savePhotoToLibrary(formData) {
       .single();
 
     if (dbError && isVisibilitySchemaError(dbError)) {
+      if (isPublic) {
+        await removeStorageObjectSafely(supabase, storagePath);
+        return { success: false, error: visibilitySchemaMissingMessage(dbError) };
+      }
+
       const fallbackPayload = { ...baseInsertPayload };
       delete fallbackPayload.is_public;
       const { data: fallbackPhotoRecord, error: fallbackDbError } = await supabase
