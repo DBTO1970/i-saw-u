@@ -645,6 +645,16 @@ function toNullableFloat(value) {
 }
 
 /**
+ * Parse a boolean-like value into true/false, or return null when unspecified/invalid.
+ * Accepts booleans, "true"/"false", "1"/"0", and numeric 1/0.
+ */
+function toNullableBoolean(value) {
+  if (value === true || value === 'true' || value === '1' || value === 1) return true;
+  if (value === false || value === 'false' || value === '0' || value === 0) return false;
+  return null;
+}
+
+/**
  * Update editable metadata on a photo
  */
 export async function updateUserLibraryPhotoMetadata(photoId, payload) {
@@ -688,6 +698,15 @@ export async function updateUserLibraryPhotoMetadata(photoId, payload) {
       gps_longitude: toNullableFloat(payload?.gpsLongitude),
       raw_exif: nextRawExif,
     };
+
+    // Only include is_public when the caller provided an explicit value (boolean-like).
+    // toNullableBoolean returns null when absent/invalid; we treat null as "not provided".
+    const parsedIsPublic = toNullableBoolean(payload?.isPublic);
+    if (parsedIsPublic !== null) {
+      updatesWithRawExif.is_public = parsedIsPublic;
+      // Also keep raw_exif in sync so older DBs that don't have is_public still get visibility info.
+      updatesWithRawExif.raw_exif = buildVisibilityAwareRawExif(updatesWithRawExif.raw_exif || rawExifValue, parsedIsPublic);
+    }
 
     if (hasSubmittedIsPublic) {
       updatesWithRawExif.is_public = !!submittedIsPublic;
