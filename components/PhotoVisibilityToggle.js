@@ -4,9 +4,11 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import { togglePhotoVisibility } from '../app/actions/user-library';
 
-export default function PhotoVisibilityToggle({ photoId, initialIsPublic = false, className = '' }) {
+export default function PhotoVisibilityToggle({ photoId, initialIsPublic = false, isPublic: controlledIsPublic, onChange, className = '' }) {
   const router = useRouter();
-  const [isPublic, setIsPublic] = useState(initialIsPublic);
+  const isControlled = typeof controlledIsPublic !== 'undefined';
+  const [internalIsPublic, setInternalIsPublic] = useState(initialIsPublic);
+  const isPublic = isControlled ? controlledIsPublic : internalIsPublic;
   const [isUpdating, setIsUpdating] = useState(false);
   const [error, setError] = useState(null);
 
@@ -26,9 +28,24 @@ export default function PhotoVisibilityToggle({ photoId, initialIsPublic = false
       return;
     }
 
-    setIsPublic(nextValue);
+    // Update internal state if uncontrolled
+    if (!isControlled) {
+      setInternalIsPublic(nextValue);
+    }
+
+    // Notify parent if provided — parent can choose whether to refresh UI
+    if (typeof onChange === 'function') {
+      try {
+        onChange(nextValue);
+      } catch (err) {
+        // ignore
+      }
+    } else {
+      // No parent handler: refresh to ensure UI consistency
+      router.refresh();
+    }
+
     setIsUpdating(false);
-    router.refresh();
   };
 
   return (

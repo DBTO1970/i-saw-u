@@ -44,6 +44,7 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
   const [saveStatus, setSaveStatus] = useState(null);
+  const [isPublic, setIsPublic] = useState(!!initialPhoto.is_public);
   const [form, setForm] = useState({
     fileName: initialPhoto.file_name || '',
     dateTaken: initialPhoto.date_taken || '',
@@ -53,7 +54,6 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
     gpsLatitude: initialPhoto.gps_latitude != null ? String(initialPhoto.gps_latitude) : '',
     gpsLongitude: initialPhoto.gps_longitude != null ? String(initialPhoto.gps_longitude) : '',
     rawExif: safeJsonStringify(initialPhoto.raw_exif),
-    isPublic: !!initialPhoto.is_public,
   });
   const parsedRawExif = useMemo(() => {
     try {
@@ -102,7 +102,7 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
   };
 
   const toggleVisibilityInForm = () => {
-    setForm((current) => ({ ...current, isPublic: !current.isPublic }));
+    setIsPublic((prev) => !prev);
   };
 
   const handleSave = async (event) => {
@@ -110,7 +110,10 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
     setIsSaving(true);
     setSaveStatus(null);
 
-    const response = await updateUserLibraryPhotoMetadata(initialPhoto.id, form);
+    // include isPublic explicitly in payload
+    const payload = { ...form, isPublic };
+
+    const response = await updateUserLibraryPhotoMetadata(initialPhoto.id, payload);
     if (!response?.success) {
       setSaveStatus({ type: 'error', text: response?.error || 'Failed to save metadata.' });
       setIsSaving(false);
@@ -157,7 +160,7 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
           <div className="p-8 text-center text-sm text-slate-500">Photo preview unavailable.</div>
         )}
         <div className="border-t border-slate-800/90 px-4 py-3 md:px-6 md:py-4">
-          <p className="text-sm font-semibold text-white">Photo</p>
+          <p className="text-sm font-semibold text-white md:text-base">Photo</p>
           <p className="text-xs text-slate-500">{initialPhoto.file_name}</p>
         </div>
       </div>
@@ -187,7 +190,7 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
           <p className="text-sm font-semibold text-white">Visibility</p>
           <p className="text-xs text-slate-500">Control whether other fans can see this photo in the show gallery.</p>
         </div>
-        <PhotoVisibilityToggle photoId={initialPhoto.id} initialIsPublic={!!initialPhoto.is_public} />
+        <PhotoVisibilityToggle photoId={initialPhoto.id} isPublic={isPublic} onChange={(v) => setIsPublic(!!v)} />
       </div>
 
       <form onSubmit={handleSave} className="space-y-4 rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
@@ -198,20 +201,20 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
             <button
               type="button"
               role="switch"
-              aria-checked={form.isPublic}
+              aria-checked={isPublic}
               onClick={toggleVisibilityInForm}
               className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1.5 text-xs font-semibold transition ${
-                form.isPublic
+                isPublic
                   ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-200 hover:border-emerald-400 hover:bg-emerald-500/20'
                   : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-cyan-500/40 hover:text-cyan-200'
               }`}
             >
               <span className={`relative inline-flex h-4 w-8 items-center rounded-full border transition ${
-                form.isPublic ? 'border-emerald-400/40 bg-emerald-400/20' : 'border-slate-600 bg-slate-800'
+                isPublic ? 'border-emerald-400/40 bg-emerald-400/20' : 'border-slate-600 bg-slate-800'
               }`}>
-                <span className={`inline-block h-3 w-3 rounded-full bg-white transition ${form.isPublic ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                <span className={`inline-block h-3 w-3 rounded-full bg-white transition ${isPublic ? 'translate-x-4' : 'translate-x-0.5'}`} />
               </span>
-              <span className="text-xs">{form.isPublic ? 'Public' : 'Private'}</span>
+              <span className="text-xs">{isPublic ? 'Public' : 'Private'}</span>
             </button>
           </div>
         </div>
@@ -221,6 +224,3 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
             File name
             <input value={form.fileName} onChange={onChange('fileName')} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
           </label>
-          <label className="text-xs text-slate-300">
-            Matched show date
-            <input type="date" value={form.matchedShowDate} onChange={onChange('matchedShowDate')} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-[...]
