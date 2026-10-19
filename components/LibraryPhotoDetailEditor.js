@@ -53,6 +53,7 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
     gpsLatitude: initialPhoto.gps_latitude != null ? String(initialPhoto.gps_latitude) : '',
     gpsLongitude: initialPhoto.gps_longitude != null ? String(initialPhoto.gps_longitude) : '',
     rawExif: safeJsonStringify(initialPhoto.raw_exif),
+    isPublic: !!initialPhoto.is_public,
   });
   const parsedRawExif = useMemo(() => {
     try {
@@ -100,6 +101,10 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
     }));
   };
 
+  const toggleVisibilityInForm = () => {
+    setForm((current) => ({ ...current, isPublic: !current.isPublic }));
+  };
+
   const handleSave = async (event) => {
     event.preventDefault();
     setIsSaving(true);
@@ -137,7 +142,7 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
 
   return (
     <section className="space-y-4 md:space-y-6">
-      <div className="overflow-hidden rounded-2xl border border-cyan-500/20 bg-gradient-to-b from-slate-900/95 via-slate-950/85 to-slate-950/70 shadow-xl shadow-cyan-950/20 md:rounded-3xl md:border-cyan-400/25 md:shadow-2xl md:shadow-cyan-950/40">
+      <div className="overflow-hidden rounded-2xl border border-cyan-500/20 bg-gradient-to-b from-slate-900/95 via-slate-950/85 to-slate-950/70 shadow-xl shadow-cyan-950/20 md:rounded-3xl md:bord...">
         {initialPhoto.photo_url || initialPhoto.url ? (
           <div className="p-2 sm:p-4 md:p-6">
             <img
@@ -152,7 +157,7 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
           <div className="p-8 text-center text-sm text-slate-500">Photo preview unavailable.</div>
         )}
         <div className="border-t border-slate-800/90 px-4 py-3 md:px-6 md:py-4">
-          <p className="text-sm font-semibold text-white md:text-base">Photo</p>
+          <p className="text-sm font-semibold text-white">Photo</p>
           <p className="text-xs text-slate-500">{initialPhoto.file_name}</p>
         </div>
       </div>
@@ -186,7 +191,31 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
       </div>
 
       <form onSubmit={handleSave} className="space-y-4 rounded-2xl border border-slate-800 bg-slate-950/70 p-4">
-        <p className="text-sm font-semibold text-white">Metadata</p>
+        <div className="flex items-center justify-between">
+          <p className="text-sm font-semibold text-white">Metadata</p>
+          <div className="flex items-center gap-3">
+            <p className="text-xs text-slate-300">Visibility</p>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={form.isPublic}
+              onClick={toggleVisibilityInForm}
+              className={`inline-flex items-center gap-2 rounded-full border px-2.5 py-1.5 text-xs font-semibold transition ${
+                form.isPublic
+                  ? 'border-emerald-500/40 bg-emerald-500/15 text-emerald-200 hover:border-emerald-400 hover:bg-emerald-500/20'
+                  : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-cyan-500/40 hover:text-cyan-200'
+              }`}
+            >
+              <span className={`relative inline-flex h-4 w-8 items-center rounded-full border transition ${
+                form.isPublic ? 'border-emerald-400/40 bg-emerald-400/20' : 'border-slate-600 bg-slate-800'
+              }`}>
+                <span className={`inline-block h-3 w-3 rounded-full bg-white transition ${form.isPublic ? 'translate-x-4' : 'translate-x-0.5'}`} />
+              </span>
+              <span className="text-xs">{form.isPublic ? 'Public' : 'Private'}</span>
+            </button>
+          </div>
+        </div>
+
         <div className="grid gap-3 md:grid-cols-2">
           <label className="text-xs text-slate-300">
             File name
@@ -194,80 +223,4 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
           </label>
           <label className="text-xs text-slate-300">
             Matched show date
-            <input type="date" value={form.matchedShowDate} onChange={onChange('matchedShowDate')} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
-          </label>
-          <label className="text-xs text-slate-300">
-            Date taken
-            <input type="date" value={form.dateTaken} onChange={onChange('dateTaken')} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
-          </label>
-          <label className="text-xs text-slate-300">
-            Time taken
-            <input type="time" value={form.timeTaken} onChange={onChange('timeTaken')} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
-          </label>
-          <label className="text-xs text-slate-300">
-            Show start time
-            <input type="time" value={form.showStartTime} onChange={onChange('showStartTime')} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
-          </label>
-          <label className="text-xs text-slate-300">
-            GPS latitude
-            <input value={form.gpsLatitude} onChange={onChange('gpsLatitude')} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
-          </label>
-          <label className="text-xs text-slate-300">
-            GPS longitude
-            <input value={form.gpsLongitude} onChange={onChange('gpsLongitude')} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-white" />
-          </label>
-        </div>
-
-        <label className="block text-xs text-slate-300">
-          Raw EXIF JSON
-          <textarea
-            value={form.rawExif}
-            onChange={onChange('rawExif')}
-            rows={8}
-            className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 font-mono text-xs text-white"
-          />
-        </label>
-
-        {saveStatus ? (
-          <div className={`rounded-lg border px-3 py-2 text-xs font-medium ${saveStatus.type === 'success' ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300' : 'border-red-500/30 bg-red-500/10 text-red-300'}`}>
-            {saveStatus.text}
-          </div>
-        ) : null}
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="submit"
-            disabled={isSaving || isDeleting}
-            className="rounded-xl bg-cyan-500 px-4 py-2 text-sm font-semibold text-slate-950 transition hover:bg-cyan-400 disabled:opacity-60"
-          >
-            {isSaving ? 'Saving...' : 'Save metadata'}
-          </button>
-          <button
-            type="button"
-            onClick={handleDelete}
-            disabled={isDeleting || isSaving}
-            className="rounded-xl border border-red-500/50 bg-red-500/10 px-4 py-2 text-sm font-semibold text-red-200 transition hover:bg-red-500/20 disabled:opacity-60"
-          >
-            {isDeleting ? 'Deleting...' : 'Delete photo'}
-          </button>
-        </div>
-      </form>
-
-      {showForCard ? (
-        <ShowMatchCard
-          photoMetadata={showCardPhotoMetadata}
-          show={showForCard}
-        showStartTime={form.showStartTime || '20:00'}
-          onShowStartTimeChange={handleShowStartTimeChange}
-          initialIsBookmarked={!!savedShowMetadata}
-          initialTimeContextLabel={initialTimeContextLabel}
-          initialCurrentSongLabel={initialCurrentSongLabel}
-        />
-      ) : (
-        <div className="rounded-2xl border border-slate-800 bg-slate-950/70 p-4 text-sm text-slate-300">
-          No saved show information found for this photo yet.
-        </div>
-      )}
-    </section>
-  );
-}
+            <input type="date" value={form.matchedShowDate} onChange={onChange('matchedShowDate')} className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-1.5 text-sm text-[...]

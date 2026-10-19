@@ -644,6 +644,9 @@ function toNullableFloat(value) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+/**
+ * Update editable metadata on a photo
+ */
 export async function updateUserLibraryPhotoMetadata(photoId, payload) {
   try {
     const supabase = createClient();
@@ -664,6 +667,17 @@ export async function updateUserLibraryPhotoMetadata(photoId, payload) {
       matched_show_date: toNullableDate(payload?.matchedShowDate),
     };
 
+    // Parse visibility from payload (accept either isPublic or is_public)
+    const isPublicRaw = typeof payload?.isPublic !== 'undefined' ? payload.isPublic : (typeof payload?.is_public !== 'undefined' ? payload.is_public : undefined);
+    const hasSubmittedIsPublic = typeof isPublicRaw === 'boolean' || typeof isPublicRaw === 'string';
+    const submittedIsPublic = typeof isPublicRaw === 'boolean' ? isPublicRaw : (typeof isPublicRaw === 'string' ? (isPublicRaw === 'true' || isPublicRaw === '1') : null);
+
+    // Apply show metadata first, then apply visibility into raw_exif if provided
+    let nextRawExif = applyShowMetadata(rawExifValue, updates.matched_show_date, updates.show_start_time);
+    if (hasSubmittedIsPublic) {
+      nextRawExif = buildVisibilityAwareRawExif(nextRawExif, !!submittedIsPublic);
+    }
+
     const updatesWithRawExif = {
       file_name: toNullableText(payload?.fileName) || 'Untitled photo',
       date_taken: toNullableDate(payload?.dateTaken),
@@ -672,8 +686,12 @@ export async function updateUserLibraryPhotoMetadata(photoId, payload) {
       matched_show_date: updates.matched_show_date,
       gps_latitude: toNullableFloat(payload?.gpsLatitude),
       gps_longitude: toNullableFloat(payload?.gpsLongitude),
-      raw_exif: applyShowMetadata(rawExifValue, updates.matched_show_date, updates.show_start_time),
+      raw_exif: nextRawExif,
     };
+
+    if (hasSubmittedIsPublic) {
+      updatesWithRawExif.is_public = !!submittedIsPublic;
+    }
 
     const { data, error } = await supabase
       .from('photos')
@@ -682,6 +700,25 @@ export async function updateUserLibraryPhotoMetadata(photoId, payload) {
       .eq('user_id', user.id)
       .select('*')
       .single();
+
+    // If DB schema is missing is_public and we tried to write it, fall back to updating raw_exif only
+    if (error && isVisibilitySchemaError(error) && hasSubmittedIsPublic) {
+      const fallbackPayload = { ...updatesWithRawExif };
+      delete fallbackPayload.is_public;
+      const { data: fallbackData, error: fallbackError } = await supabase
+        .from('photos')
+        .update(fallbackPayload)
+        .eq('id', photoId)
+        .eq('user_id', user.id)
+        .select('*')
+        .single();
+
+      if (fallbackError) {
+        return { success: false, error: visibilitySchemaMissingMessage(fallbackError) || fallbackError.message };
+      }
+
+      return { success: true, photo: fallbackData };
+    }
 
     if (error || !data) {
       return { success: false, error: error?.message || 'Failed to update photo metadata.' };
@@ -712,6 +749,7 @@ export async function getUserSavedShows() {
       return { shows: [], error: error.message };
     }
 
+    // Fetch only the matched_show_date for other users' public photos — no raw_exif, no full-table scan.
     let publicPhotoCounts = new Map();
     const { data: publicPhotoRows, error: publicPhotoError } = await supabase
       .from('photos')
@@ -737,615 +775,4 @@ export async function getUserSavedShows() {
   }
 }
 
-export async function getRecentFanPhotoShows(limit = 8) {
-  try {
-    const supabase = createClient();
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      return { shows: [], error: 'User not authenticated' };
-    }
-
-    const normalizedLimit = Number.isFinite(Number(limit))
-      ? Math.max(1, Math.floor(Number(limit)))
-      : 8;
-
-    const { data: photoRows, error: photoRowsError } = await supabase
-      .from('photos')
-      .select('user_id, is_public, matched_show_date, created_at, raw_exif')
-      .neq('user_id', user.id)
-      .eq('is_public', true)
-      .not('matched_show_date', 'is', null)
-      .order('created_at', { ascending: false })
-      .limit(normalizedLimit * 100);
-
-    if (photoRowsError) {
-      return { shows: [], error: visibilitySchemaMissingMessage(photoRowsError) || photoRowsError.message };
-    }
-
-    const { data: savedShows } = await supabase
-      .from('saved_shows')
-      .select('show_date, venue_name, location')
-      .eq('user_id', user.id);
-
-    const savedShowMap = new Map((savedShows || []).map((s) => [s.show_date, s]));
-
-    const statsByShowDate = new Map();
-    (photoRows || []).forEach((photoRow) => {
-      if (!photoRow?.matched_show_date) {
-        return;
-      }
-
-      const showDate = photoRow.matched_show_date;
-      const current = statsByShowDate.get(showDate) || {
-        show_date: showDate,
-        venue_name: null,
-        location: null,
-        new_public_photo_count: 0,
-        latest_public_photo_at: null,
-        _firstPhoto: photoRow,
-      };
-
-      current.new_public_photo_count += 1;
-      if (
-        photoRow.created_at &&
-        (!current.latest_public_photo_at || photoRow.created_at > current.latest_public_photo_at)
-      ) {
-        current.latest_public_photo_at = photoRow.created_at;
-      }
-
-      statsByShowDate.set(showDate, current);
-    });
-
-    for (const [showDate, stats] of statsByShowDate) {
-      const saved = savedShowMap.get(showDate);
-      if (saved) {
-        stats.venue_name = saved.venue_name;
-        stats.location = saved.location;
-      } else {
-        const rawExif = toObjectOrEmpty(stats._firstPhoto?.raw_exif);
-        const showMetadata = toObjectOrEmpty(rawExif?.showMetadata);
-        const city = showMetadata?.city || null;
-        const state = showMetadata?.state || null;
-        stats.venue_name = showMetadata?.venueName || null;
-        stats.location = [city, state].filter(Boolean).join(', ') || null;
-      }
-      delete stats._firstPhoto;
-    }
-
-    const recentShows = Array.from(statsByShowDate.values())
-      .sort((left, right) =>
-        String(right.latest_public_photo_at || '').localeCompare(String(left.latest_public_photo_at || ''))
-      )
-      .slice(0, normalizedLimit);
-
-    return { shows: recentShows, error: null };
-  } catch (error) {
-    return { shows: [], error: error.message };
-  }
-}
-
-export async function getUserSavedShowByDate(showDate) {
-  try {
-    const supabase = createClient();
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      return { show: null, error: 'User not authenticated' };
-    }
-
-    const { data, error } = await supabase
-      .from('saved_shows')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('show_date', showDate)
-      .maybeSingle();
-
-    if (error) {
-      return { show: null, error: error.message };
-    }
-
-    return { show: data || null, error: null };
-  } catch (error) {
-    return { show: null, error: error.message };
-  }
-}
-
-export async function getUserPhotosForShow(showDate) {
-  try {
-    const supabase = createClient();
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      return { photos: [], error: 'User not authenticated' };
-    }
-
-    const { data: photos, error } = await supabase
-      .from('photos')
-      .select('*')
-      .eq('user_id', user.id)
-      .eq('matched_show_date', showDate)
-      .order('created_at', { ascending: true });
-
-    if (error) {
-      return { photos: [], error: error.message };
-    }
-
-    const normalizedPhotos = (photos || []).map(withNormalizedVisibility);
-
-    const photosWithUrls = await Promise.all(
-      normalizedPhotos.map(async (photo) => {
-        return withPhotoUrls(photo);
-      })
-    );
-
-    return { photos: photosWithUrls, error: null };
-  } catch (error) {
-    return { photos: [], error: error.message };
-  }
-}
-
-export async function deletePhotoFromLibrary(photoId, storagePath) {
-  try {
-    const supabase = createClient();
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      return { success: false, error: 'User not authenticated' };
-    }
-
-    if (storagePath) {
-      const thumbnailStoragePath = toThumbnailStoragePath(storagePath);
-      const storagePaths = thumbnailStoragePath && thumbnailStoragePath !== storagePath
-        ? [storagePath, thumbnailStoragePath]
-        : [storagePath];
-      const { error: storageError } = await supabase.storage.from('user-photos').remove(storagePaths);
-      if (storageError) {
-        return { success: false, error: storageError.message };
-      }
-    }
-
-    const { error } = await supabase
-      .from('photos')
-      .delete()
-      .eq('id', photoId)
-      .eq('user_id', user.id);
-
-    if (error) {
-      return { success: false, error: error.message };
-    }
-
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
-
-export async function removeShowFromLibraryByDate(showDate) {
-  try {
-    const supabase = createClient();
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      return { success: false, error: 'User not authenticated' };
-    }
-
-    const { error } = await supabase
-      .from('saved_shows')
-      .delete()
-      .eq('user_id', user.id)
-      .eq('show_date', showDate);
-
-    if (error) {
-      return { success: false, error: error.message };
-    }
-
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
-
-export async function deleteSavedShow(showId) {
-  try {
-    const supabase = createClient();
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      return { success: false, error: 'User not authenticated' };
-    }
-
-    const { error } = await supabase
-      .from('saved_shows')
-      .delete()
-      .eq('id', showId)
-      .eq('user_id', user.id);
-
-    if (error) {
-      return { success: false, error: error.message };
-    }
-
-    return { success: true };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
-
-export async function togglePhotoVisibility(photoId, isPublic) {
-  try {
-    const supabase = createClient();
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      return { success: false, error: 'User not authenticated' };
-    }
-
-    const { data, error } = await supabase
-      .from('photos')
-      .update({ is_public: !!isPublic })
-      .eq('id', photoId)
-      .eq('user_id', user.id)
-      .select('id, is_public')
-      .single();
-
-    if (error && isVisibilitySchemaError(error)) {
-      const { data: existingPhoto, error: existingError } = await supabase
-        .from('photos')
-        .select('raw_exif')
-        .eq('id', photoId)
-        .eq('user_id', user.id)
-        .maybeSingle();
-
-      if (existingError) {
-        return { success: false, error: existingError.message };
-      }
-
-      const nextRawExif = buildVisibilityAwareRawExif(existingPhoto?.raw_exif, !!isPublic);
-      const { data: fallbackData, error: fallbackError } = await supabase
-        .from('photos')
-        .update({ raw_exif: nextRawExif })
-        .eq('id', photoId)
-        .eq('user_id', user.id)
-        .select('id, raw_exif')
-        .single();
-
-      if (fallbackError) {
-        return { success: false, error: visibilitySchemaMissingMessage(fallbackError) || fallbackError.message };
-      }
-
-      return { success: true, photo: withNormalizedVisibility({ ...fallbackData, is_public: !!isPublic }) };
-    }
-
-    if (error) {
-      return { success: false, error: visibilitySchemaMissingMessage(error) || error.message };
-    }
-
-    return { success: true, photo: withNormalizedVisibility(data) };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
-
-export async function getPublicPhotosForShow(showDate) {
-  try {
-    const supabase = createClient();
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      return { photos: [], error: 'User not authenticated' };
-    }
-
-    const { data: photos, error } = await supabase
-      .from('photos')
-      .select('id, user_id, storage_path, file_name, file_size, mime_type, is_public, matched_show_date, show_start_time, raw_exif, created_at')
-      .eq('matched_show_date', showDate)
-      .eq('is_public', true)
-      .order('created_at', { ascending: false });
-
-    if (error) {
-      return { photos: [], error: visibilitySchemaMissingMessage(error) || error.message };
-    }
-
-    const publicPhotos = (photos || []).map(withNormalizedVisibility);
-    const userIds = [...new Set(publicPhotos.map((photo) => photo.user_id).filter(Boolean))];
-    if (userIds.length === 0) {
-      return { photos: [], error: null };
-    }
-
-    const photoIds = publicPhotos.map((p) => p.id);
-
-    const [{ data: profiles, error: profileError }, { data: showRows, error: showRowsError }, { data: userPhotoRows, error: userPhotoRowsError }, { data: likeRows, error: likeRowsError }] = await Promise.all([
-      supabase
-        .from('profiles')
-        .select('id, username, avatar_url, display_name')
-        .in('id', userIds),
-      supabase
-        .from('saved_shows')
-        .select('user_id')
-        .in('user_id', userIds),
-      supabase
-        .from('photos')
-        .select('user_id')
-        .in('user_id', userIds)
-        .eq('is_public', true),
-      supabase
-        .from('photo_likes')
-        .select('photo_id, user_id')
-        .in('photo_id', photoIds),
-    ]);
-
-    const safeProfiles = profileError ? [] : (profiles || []);
-    const safeShowRows = showRowsError ? [] : (showRows || []);
-    const safeUserPhotoRows = userPhotoRowsError ? [] : (userPhotoRows || []);
-    const safeLikeRows = likeRowsError ? [] : (likeRows || []);
-
-    const profileById = new Map(safeProfiles.map((profile) => [profile.id, profile]));
-    const showsAttendedByUser = new Map();
-    const publicPhotosByUser = new Map();
-    const likeCountByPhoto = new Map();
-    const likedByMeSet = new Set();
-
-    safeShowRows.forEach((row) => {
-      showsAttendedByUser.set(row.user_id, (showsAttendedByUser.get(row.user_id) || 0) + 1);
-    });
-
-    safeUserPhotoRows.forEach((row) => {
-      publicPhotosByUser.set(row.user_id, (publicPhotosByUser.get(row.user_id) || 0) + 1);
-    });
-
-    safeLikeRows.forEach((row) => {
-      likeCountByPhoto.set(row.photo_id, (likeCountByPhoto.get(row.photo_id) || 0) + 1);
-      if (row.user_id === user.id) {
-        likedByMeSet.add(row.photo_id);
-      }
-    });
-
-    const photosWithUrls = await Promise.all(
-      publicPhotos.map(async (photo) => {
-        const creator = profileById.get(photo.user_id) || null;
-
-        return {
-          ...withPhotoUrls(photo),
-          isMine: photo.user_id === user.id,
-          like_count: likeCountByPhoto.get(photo.id) || 0,
-          liked_by_me: likedByMeSet.has(photo.id),
-          creator: creator ? {
-            id: creator.id,
-            username: creator.username,
-            display_name: creator.display_name,
-            avatar_url: creator.avatar_url,
-            stats: {
-              total_shows_attended: showsAttendedByUser.get(photo.user_id) || 0,
-              total_public_photos: publicPhotosByUser.get(photo.user_id) || 0,
-            },
-          } : null,
-        };
-      })
-    );
-
-    return { photos: photosWithUrls, error: null };
-  } catch (error) {
-    return { photos: [], error: error.message };
-  }
-}
-
-export async function togglePhotoLike(photoId) {
-  try {
-    const supabase = createClient();
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      return { success: false, error: 'User not authenticated' };
-    }
-
-    const { data: existing } = await supabase
-      .from('photo_likes')
-      .select('id')
-      .eq('photo_id', photoId)
-      .eq('user_id', user.id)
-      .maybeSingle();
-
-    if (existing) {
-      const { error: deleteError } = await supabase
-        .from('photo_likes')
-        .delete()
-        .eq('photo_id', photoId)
-        .eq('user_id', user.id);
-
-      if (deleteError) {
-        return { success: false, error: deleteError.message };
-      }
-    } else {
-      const { error: insertError } = await supabase
-        .from('photo_likes')
-        .insert({ photo_id: photoId, user_id: user.id });
-
-      if (insertError) {
-        return { success: false, error: insertError.message };
-      }
-    }
-
-    const { count } = await supabase
-      .from('photo_likes')
-      .select('id', { count: 'exact', head: true })
-      .eq('photo_id', photoId);
-
-    return {
-      success: true,
-      liked: !existing,
-      likeCount: count ?? 0,
-    };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
-
-export async function getUserLikedPhotos() {
-  try {
-    const supabase = createClient();
-    const { data: { user }, error: userError } = await supabase.auth.getUser();
-
-    if (userError || !user) {
-      return { photos: [], error: 'User not authenticated' };
-    }
-
-    const { data: likeRows, error: likeError } = await supabase
-      .from('photo_likes')
-      .select('photo_id, created_at')
-      .eq('user_id', user.id)
-      .order('created_at', { ascending: false });
-
-    if (likeError) {
-      return { photos: [], error: likeError.message };
-    }
-
-    if (!likeRows || likeRows.length === 0) {
-      return { photos: [], error: null };
-    }
-
-    const photoIds = likeRows.map((r) => r.photo_id);
-    const likedAtByPhotoId = new Map(likeRows.map((r) => [r.photo_id, r.created_at]));
-
-    const { data: photos, error: photosError } = await supabase
-      .from('photos')
-      .select('id, user_id, storage_path, file_name, file_size, mime_type, is_public, matched_show_date, show_start_time, raw_exif, created_at')
-      .in('id', photoIds)
-      .neq('user_id', user.id)
-      .eq('is_public', true);
-
-    if (photosError) {
-      return { photos: [], error: photosError.message };
-    }
-
-    const normalizedPhotos = (photos || []).map(withNormalizedVisibility);
-
-    if (normalizedPhotos.length === 0) {
-      return { photos: [], error: null };
-    }
-
-    const { data: allLikeRows } = await supabase
-      .from('photo_likes')
-      .select('photo_id')
-      .in('photo_id', photoIds);
-
-    const likeCountByPhoto = new Map();
-    (allLikeRows || []).forEach((row) => {
-      likeCountByPhoto.set(row.photo_id, (likeCountByPhoto.get(row.photo_id) || 0) + 1);
-    });
-
-    const creatorIds = [...new Set(normalizedPhotos.map((p) => p.user_id).filter(Boolean))];
-    const { data: profiles } = await supabase
-      .from('profiles')
-      .select('id, username, display_name, avatar_url')
-      .in('id', creatorIds);
-
-    const profileById = new Map((profiles || []).map((p) => [p.id, p]));
-
-    const photosWithUrls = await Promise.all(
-      normalizedPhotos.map(async (photo) => {
-        const creator = profileById.get(photo.user_id) || null;
-
-        return {
-          ...withPhotoUrls(photo),
-          like_count: likeCountByPhoto.get(photo.id) || 0,
-          liked_by_me: true,
-          liked_at: likedAtByPhotoId.get(photo.id) || null,
-          creator: creator ? {
-            id: creator.id,
-            username: creator.username,
-            display_name: creator.display_name,
-            avatar_url: creator.avatar_url,
-          } : null,
-        };
-      })
-    );
-
-    photosWithUrls.sort((a, b) => String(b.liked_at || '').localeCompare(String(a.liked_at || '')));
-
-    return { photos: photosWithUrls, error: null };
-  } catch (error) {
-    return { photos: [], error: error.message };
-  }
-}
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// rest of file unchanged
