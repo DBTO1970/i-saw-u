@@ -141,7 +141,7 @@ export default function LibraryPhotoDetailEditor({ initialPhoto }) {
         {initialPhoto.photo_url || initialPhoto.url ? (
           <div className="p-2 sm:p-4 md:p-6">
             <img
-              src={initialPhoto.photo_url || initialPhoto.url}
+              src={initialPhoto.thumb_url || initialPhoto.photo_url || initialPhoto.url}
               alt={initialPhoto.file_name}
               className="mx-auto h-auto w-full rounded-xl object-contain ring-1 ring-white/10 md:max-h-[82vh] md:rounded-2xl"
               loading="eager"

@@ -156,13 +156,25 @@ export default function FanGalleryGrid({ photos = [], currentUserId = null }) {
 
             <div className="p-4" onClick={(event) => event.stopPropagation()}>
               {selectedPhoto.photo_url || selectedPhoto.url ? (
-                <img
-                  src={selectedPhoto.photo_url || selectedPhoto.url || ''}
-                  alt={selectedPhoto.file_name || 'Fan photo'}
-                  className="max-h-[80vh] w-full object-contain"
-                  loading="eager"
-                  decoding="async"
-                />
+                <>
+                  <img
+                    src={selectedPhoto.thumb_url || selectedPhoto.photo_url || selectedPhoto.url || ''}
+                    alt={selectedPhoto.file_name || 'Fan photo'}
+                    className="max-h-[80vh] w-full object-contain"
+                    loading="eager"
+                    decoding="async"
+                  />
+                  <div className="mt-2 text-center">
+                    <a
+                      href={selectedPhoto.photo_url || selectedPhoto.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-xs text-slate-500 hover:text-cyan-400"
+                    >
+                      View full resolution
+                    </a>
+                  </div>
+                </>
               ) : (
                 <div className="flex h-[60vh] w-full items-center justify-center rounded-2xl border border-dashed border-slate-700 bg-slate-900/80 text-sm text-slate-500">
                   Photo unavailable

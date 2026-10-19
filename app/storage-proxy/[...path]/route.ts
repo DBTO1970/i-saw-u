@@ -99,12 +99,16 @@ async function proxyStorageRequest(request: NextRequest, pathSegments: string[])
   if (serviceRoleResponse) {
     if (serviceRoleResponse.ok) {
       const responseHeaders = new Headers();
-      ['content-type', 'cache-control', 'etag', 'last-modified', 'accept-ranges', 'content-range'].forEach((headerName) => {
+      ['content-type', 'etag', 'last-modified', 'accept-ranges', 'content-range'].forEach((headerName) => {
         const headerValue = serviceRoleResponse.headers.get(headerName);
         if (headerValue) {
           responseHeaders.set(headerName, headerValue);
         }
       });
+      // Supabase's authenticated storage endpoint returns `cache-control: no-cache` regardless
+      // of the per-object cacheControl set at upload time. Override it so browsers and CDNs
+      // can cache the proxied response for the full 1-year TTL.
+      responseHeaders.set('cache-control', 'public, max-age=31536000, immutable');
 
       return new NextResponse(serviceRoleResponse.body, {
         status: serviceRoleResponse.status,
